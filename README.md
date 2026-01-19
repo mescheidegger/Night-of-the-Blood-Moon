@@ -1,3 +1,18 @@
+Night of the Blood Moon
+
+A dark-fantasy, top-down survivor-lite inspired by Vampire Survivors and
+classic roguelikes. Fight endless waves of monsters under a cursed blood
+moon, collect upgrades, and push your build as far as it can go before
+the night consumes you.
+
+The project is a highly modular, registry-driven prototype built with
+Phaser 3 and Vite, focused on deterministic simulation, pooled entities,
+and data-driven gameplay systems.
+
+Play the game: https://www.nightofthebloodmoon.io/
+
+------------------------------------------------------------------------
+
 Night of the Blood Moon — System Overview
 =======================================
 
