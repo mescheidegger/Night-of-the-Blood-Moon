@@ -1,4 +1,5 @@
 Night of the Blood Moon
+=======================================
 
 A dark-fantasy, top-down survivor-lite inspired by Vampire Survivors and
 classic roguelikes. Fight endless waves of monsters under a cursed blood
