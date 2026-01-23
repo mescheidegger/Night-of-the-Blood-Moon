@@ -81,7 +81,7 @@ export const DEV_RUN = Object.freeze({
   enabled: false,
 
   // jump to late game
-  startElapsedSeconds: 14.9 * 60,
+  startElapsedSeconds: 2.8 * 60,
 
   // optional
   startLevel: 50,

@@ -109,35 +109,8 @@ export const ENEMY_BEHAVIORS = {
       return ENEMY_BEHAVIORS.seekPlayer(enemy, player, scene, dt);
     }
 
-    // NEW: if this formation has broken, stop slot-following and just hunt the player
-    if (formation.hasBroken) {
-      // Optional cleanup of formation metadata
-      enemy._formationId = null;
-      enemy._formationAngle = null;
-      enemy._formationRadius = null;
-      return ENEMY_BEHAVIORS.seekPlayer(enemy, player, scene, dt);
-    }
-
     const now = scene.time?.now ?? 0;
     const dtSeconds = Math.max(0, (dt || 0) / 1000);
-    if (dtSeconds <= 0) {
-      // Fallback: behave like simple slot-seeker if dt is weird
-      const baseAngle = enemy._formationAngle ?? 0;
-      const angle = baseAngle + (formation.angularOffset ?? 0);
-      const radius = enemy._formationRadius ?? formation.radius;
-
-      const targetX = formation.cx + Math.cos(angle) * radius;
-      const targetY = formation.cy + Math.sin(angle) * radius;
-
-      const dx = targetX - enemy.x;
-      const dy = targetY - enemy.y;
-      const dist = Math.hypot(dx, dy) || 1;
-      const speed = enemy.speed || 60;
-
-      enemy.setVelocity((dx / dist) * speed, (dy / dist) * speed);
-      enemy.setFlipX(dx < 0);
-      return;
-    }
 
     // --- Update formation center / rotation / radius ONCE per frame ---
     if (formation.lastUpdatedAt !== now) {
@@ -148,7 +121,7 @@ export const ENEMY_BEHAVIORS = {
       const distF = Math.hypot(dxF, dyF) || 1;
       const move = formation.moveSpeed ?? 40;
 
-      if (distF > 1) {
+      if (distF > 1 && dtSeconds > 0) {
         formation.cx += (dxF / distF) * move * dtSeconds;
         formation.cy += (dyF / distF) * move * dtSeconds;
       }
@@ -160,75 +133,97 @@ export const ENEMY_BEHAVIORS = {
       if (shrink > 0) {
         formation.radius = Math.max(40, formation.radius - shrink * dtSeconds);
       }
-
-      // NEW: decide when to break formation
-      const breakDist = formation.breakDistance ?? formation.radius;
-      if (!formation.hasBroken && distF < breakDist) {
-        formation.hasBroken = true;
-      }
     }
 
     const cx = formation.cx;
     const cy = formation.cy;
-    const speed = enemy.speed || 60;
+    const speed = Number.isFinite(enemy.speed)
+      ? enemy.speed
+      : Number.isFinite(formation.moveSpeed)
+        ? formation.moveSpeed
+        : 60;
 
-    // --- Current polar coordinates (around formation center) ---
+    const baseAngle = enemy._formationAngle ?? 0;
+    const slotAngle = baseAngle + (formation.angularOffset ?? 0);
+    const slotRadius = enemy._formationRadius ?? formation.radius;
+
+    const playerDx = player.x - enemy.x;
+    const playerDy = player.y - enemy.y;
+    const playerDist = Math.hypot(playerDx, playerDy);
+    const separationRadius = Number.isFinite(formation.separationRadius) ? formation.separationRadius : 28;
+    const separationStrength = Number.isFinite(formation.separationStrength) ? formation.separationStrength : 1;
+    const maxSeparationChecks = Number.isFinite(formation.maxSeparationChecks) ? formation.maxSeparationChecks : 14;
+    const radialGain = Number.isFinite(formation.radialGain) ? formation.radialGain : 0.03;
+
+    let sepX = 0;
+    let sepY = 0;
+    let checked = 0;
+    if (formation.members && maxSeparationChecks > 0 && separationRadius > 0) {
+      for (const other of formation.members) {
+        if (checked >= maxSeparationChecks) break;
+        if (!other?.active || other === enemy) continue;
+        checked += 1;
+
+        const dx = enemy.x - other.x;
+        const dy = enemy.y - other.y;
+        const dist = Math.hypot(dx, dy);
+        if (!dist || dist >= separationRadius) continue;
+
+        const falloff = (separationRadius - dist) / separationRadius;
+        sepX += (dx / dist) * falloff;
+        sepY += (dy / dist) * falloff;
+      }
+    }
+
+    let dirX = 0;
+    let dirY = 0;
+
+    if (playerDist > 0.001) {
+      dirX += playerDx / playerDist;
+      dirY += playerDy / playerDist;
+    }
+
     const relX = enemy.x - cx;
     const relY = enemy.y - cy;
-    let curRadius = Math.hypot(relX, relY);
-    if (curRadius < 0.0001) curRadius = 0.0001; // avoid divide-by-zero
-    let curAngle = Math.atan2(relY, relX);
+    const curRadius = Math.hypot(relX, relY);
+    const radialUnitX = curRadius > 0.001 ? relX / curRadius : 0;
+    const radialUnitY = curRadius > 0.001 ? relY / curRadius : 0;
+    const radialError = slotRadius - curRadius;
 
-    // --- Target polar coordinates (slot on the ring) ---
-    const targetRadius = enemy._formationRadius ?? formation.radius;
-    const baseAngle = enemy._formationAngle ?? 0;
-    const targetAngle = baseAngle + (formation.angularOffset ?? 0);
+    const maxRadial = 0.6;
+    const radialContribution = Math.max(
+      -maxRadial,
+      Math.min(maxRadial, radialError * radialGain)
+    );
+    dirX += radialUnitX * radialContribution;
+    dirY += radialUnitY * radialContribution;
 
-    // Small helpers
-    /**
-     * Clamp numeric deltas so the formation steering never exceeds per-frame limits.
-     */
-    const clamp = (v, min, max) => (v < min ? min : v > max ? max : v);
-    /**
-     * Compute the shortest signed angular difference to keep rotation smooth.
-     */
-    const shortestAngleDiff = (a, b) => {
-      let d = b - a;
-      while (d > Math.PI) d -= Math.PI * 2;
-      while (d < -Math.PI) d += Math.PI * 2;
-      return d;
-    };
+    const angSpeed = formation.angularSpeed ?? 0;
+    if (Math.abs(angSpeed) > 0.0001) {
+      const sign = Math.sign(angSpeed);
+      const tangentX = -radialUnitY * sign;
+      const tangentY = radialUnitX * sign;
+      const tangentialGain = 0.4;
+      dirX += tangentX * tangentialGain;
+      dirY += tangentY * tangentialGain;
+    }
 
-    // --- Limit how fast angle & radius can change (no cutting straight through) ---
+    const sepMag = Math.hypot(sepX, sepY);
+    if (sepMag > 0.001) {
+      const maxSeparation = 0.5;
+      const separationContribution = Math.min(maxSeparation, separationStrength);
+      dirX += (sepX / sepMag) * separationContribution;
+      dirY += (sepY / sepMag) * separationContribution;
+    }
 
-    // Angle: how far we still need to rotate around the center
-    const dTheta = shortestAngleDiff(curAngle, targetAngle);
-    // Max angle change this frame based on speed and radius
-    const maxAngularStep = (speed / Math.max(targetRadius, 1)) * dtSeconds * 0.9;
-    const stepTheta = clamp(dTheta, -maxAngularStep, maxAngularStep);
-    const newAngle = curAngle + stepTheta;
-
-    // Radius: how far we are from our ring
-    const radiusError = targetRadius - curRadius;
-    // Limit radial movement per frame so they don't rush across rings
-    const maxRadialStep = speed * dtSeconds * 0.5;
-    const stepRadius = clamp(radiusError, -maxRadialStep, maxRadialStep);
-    const newRadius = curRadius + stepRadius;
-
-    // --- Convert back to world space ---
-    const goalX = cx + Math.cos(newAngle) * newRadius;
-    const goalY = cy + Math.sin(newAngle) * newRadius;
-
-    const vxDesired = (goalX - enemy.x) / dtSeconds;
-    const vyDesired = (goalY - enemy.y) / dtSeconds;
-
-    // Clamp velocity magnitude to enemy.speed
-    const mag = Math.hypot(vxDesired, vyDesired) || 1;
-    const maxSpeed = speed;
-    const scale = mag > maxSpeed ? maxSpeed / mag : 1;
-
-    enemy.setVelocity(vxDesired * scale, vyDesired * scale);
-    enemy.setFlipX(goalX - enemy.x < 0);
+    const dirMag = Math.hypot(dirX, dirY);
+    if (dirMag > 0.001) {
+      const scale = speed / dirMag;
+      enemy.setVelocity(dirX * scale, dirY * scale);
+    } else {
+      enemy.setVelocity(0, 0);
+    }
+    enemy.setFlipX(dirX < 0);
   },
 
   /**

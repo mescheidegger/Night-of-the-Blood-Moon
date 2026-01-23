@@ -42,7 +42,7 @@ export function boneLegion(ctx, mobKey, t, mobEntry = {}) {
   }
 
   // How many enemies per legion (per center).
-  const countPerLegion = Math.max(0, resolveAttempt(legionConfig.count, t, 60));
+  let countPerLegion = Math.max(0, resolveAttempt(legionConfig.count, t, 60));
 
   const mobConfig = resolveMobConfig(mobKey) ?? {};
   const body = mobConfig.body ?? {};
@@ -68,10 +68,23 @@ export function boneLegion(ctx, mobKey, t, mobEntry = {}) {
   const legionAi = resolveValue(legionConfig.ai, t, 'legionMember');
   const legionAiParams = legionConfig.aiParams ?? null;
 
-  // NEW: distance at which the formation "breaks" and members stop following slots
+  // Optional tuning value retained for timeline configs.
   const breakDistance =
-    Number(resolveValue(legionConfig.breakDistance, t, resolvedRadius * 0.8)) ||
-    resolvedRadius * 0.8;
+    Number(resolveValue(legionConfig.breakDistance, t, 140)) || 140;
+  const maxAngularRadPerSec =
+    Number(resolveValue(legionConfig.maxAngularRadPerSec, t, 6)) || 6;
+  const radialStepFactor =
+    Number(resolveValue(legionConfig.radialStepFactor, t, 1.5)) || 1.5;
+  const separationRadius =
+    Number(resolveValue(legionConfig.separationRadius, t, 28)) || 28;
+  const separationStrength =
+    Number(resolveValue(legionConfig.separationStrength, t, 1)) || 1;
+  const maxSeparationChecks = Math.max(
+    0,
+    Math.floor(Number(resolveValue(legionConfig.maxSeparationChecks, t, 14)) || 14)
+  );
+  const radialGain =
+    Number(resolveValue(legionConfig.radialGain, t, 0.03)) || 0.03;
 
   const camera = scene.cameras?.main;
   const view = camera?.worldView;
@@ -84,6 +97,9 @@ export function boneLegion(ctx, mobKey, t, mobEntry = {}) {
   let centerPoints = [];
 
   if (centers === 'viewportCorners') {
+    if (import.meta.env.DEV) {
+      countPerLegion = Math.min(countPerLegion, 120);
+    }
     const inset = Number(legionConfig.viewportInset) || 32;
     centerPoints = [
       { x: view.left + inset, y: view.top + inset },
@@ -148,8 +164,14 @@ export function boneLegion(ctx, mobKey, t, mobEntry = {}) {
       angularOffset: 0,
       angularSpeed,
       shrinkPerSecond,
-      breakDistance,   // NEW: when center gets this close to player, formation breaks
-      hasBroken: false, // NEW: runtime flag toggled by AI
+      breakDistance,
+      maxAngularRadPerSec,
+      radialStepFactor,
+      separationRadius,
+      separationStrength,
+      maxSeparationChecks,
+      radialGain,
+      members: new Set(),
       lastUpdatedAt: 0,
     };
     scene.legionFormations.set(id, formation);
@@ -185,7 +207,7 @@ export function boneLegion(ctx, mobKey, t, mobEntry = {}) {
           ai: legionAi,
           stats: {
             ...mobConfig.stats,
-            speed: mobConfig.stats?.speed ?? 60,
+            speed: moveSpeed,
           },
         };
 
@@ -200,6 +222,7 @@ export function boneLegion(ctx, mobKey, t, mobEntry = {}) {
         enemy._formationId = id;
         enemy._formationAngle = theta;
         enemy._formationRadius = ringRadius;
+        formation.members.add(enemy);
 
         localSpawned += 1;
         spawnedTotal += 1;
