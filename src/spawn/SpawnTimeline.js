@@ -161,7 +161,7 @@ export const SpawnTimeline = [
         legionConfig({
           count: 80,
           radius: 180,
-          moveSpeed: 105,
+          moveSpeed: 100,
           angularSpeed: 0,
           shrinkPerSecond: 10,
           maxAngularRadPerSec: 6,

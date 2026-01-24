@@ -15,6 +15,24 @@ import { SpawnerRegistry } from './spawners/index.js';
  *
  * Spawn patterns are delegated to functions in SpawnerRegistry
  * (e.g., `ring`, `batWave`).
+ *
+ * ---------------------------------------------------------------------------
+ * ✅ Pace knob (10-minute runs without rewriting your registry)
+ * ---------------------------------------------------------------------------
+ * Spawn configs are typically authored against a "design run" length (ex: 15 min).
+ * If your actual run is shorter (ex: 10 min), we map runtime seconds -> design seconds:
+ *
+ *   tDesign = tRun * (designSeconds / runSeconds) * pressure
+ *
+ * Then we use `tDesign` everywhere the config is evaluated:
+ * - mode windows (from/to)
+ * - appearAt / timeline gating (if timeline exists in the same config)
+ * - weight curves
+ * - spawnsPerTick curves
+ * - dynamic caps (entry.max as fn(t))
+ * - spawner functions (they receive tDesign by default)
+ *
+ * This keeps the registry declarative and lets you change pacing with ONE knob.
  */
 export class SpawnDirector {
   /** Initialize SpawnDirector state so runtime dependencies are ready. */
@@ -24,14 +42,14 @@ export class SpawnDirector {
     this.spawnConfig = spawnConfig ?? { byMob: {} };
 
     this.timeline = Array.isArray(this.spawnConfig?.timeline)
-    ? this.spawnConfig.timeline
-        .slice()
-        .sort((a, b) => (a.at ?? 0) - (b.at ?? 0))
-        .map((evt, i) => ({
-          ...evt,
-          __eventId: evt?.id ?? `timeline-${i}`
-        }))
-    : [];
+      ? this.spawnConfig.timeline
+          .slice()
+          .sort((a, b) => (a.at ?? 0) - (b.at ?? 0))
+          .map((evt, i) => ({
+            ...evt,
+            __eventId: evt?.id ?? `timeline-${i}`,
+          }))
+      : [];
 
     this._timelineIndex = 0;
     this._activeEvent = null;
@@ -40,10 +58,10 @@ export class SpawnDirector {
     this._weightedEnabled = true;
 
     // Base interval between spawn attempts (ms)
-    this.delayMs = spawnConfig?.delayMs ?? 300;
+    this.delayMs = this.spawnConfig?.delayMs ?? 300;
 
     // Global attempts per tick (can be a number or function(t))
-    this.spawnsPerTick = spawnConfig?.spawnsPerTick ?? 1;
+    this.spawnsPerTick = this.spawnConfig?.spawnsPerTick ?? 1;
 
     // Map of mobKey → weight (value or function(t)).
     this.weightOverrides = new Map();
@@ -54,6 +72,9 @@ export class SpawnDirector {
 
     // Lookup table that maps customSpawner names to actual spawn functions.
     this.spawners = SpawnerRegistry;
+
+    // ---- Pace mapping (runtime seconds -> design seconds) ----
+    this._pace = this._createPace(this.spawnConfig?.pace);
 
     // Apply per-mob caps & weights from config
     this._applyInitialCaps();
@@ -81,6 +102,76 @@ export class SpawnDirector {
     });
   }
 
+  // ---------------------------------------------------------------------------
+  // Pace
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Create a pace mapping object.
+   * If no pace block is provided, behaves like identity (tDesign === tRun).
+   */
+  _createPace(pace) {
+    const designSeconds = Math.max(1, Number(pace?.designSeconds ?? 0) || 0);
+    const runSeconds = Math.max(1, Number(pace?.runSeconds ?? 0) || 0);
+    const pressure = Math.max(0.1, Number(pace?.pressure ?? 1) || 1);
+
+    // Back-compat: if pace block not provided, scale = 1.
+    if (!pace || !Number.isFinite(designSeconds) || !Number.isFinite(runSeconds) || designSeconds <= 0 || runSeconds <= 0) {
+      return Object.freeze({
+        enabled: false,
+        designSeconds: null,
+        runSeconds: null,
+        pressure: 1,
+        scale: 1,
+        toDesignTime: (tRun) => tRun,
+      });
+    }
+
+    const scale = (designSeconds / runSeconds) * pressure;
+
+    return Object.freeze({
+      enabled: true,
+      designSeconds,
+      runSeconds,
+      pressure,
+      scale,
+      toDesignTime: (tRun) => tRun * scale,
+    });
+  }
+
+  /**
+   * Update pacing at runtime.
+   * Example:
+   *   director.setPace({ designSeconds: 900, runSeconds: 600, pressure: 1.0 })
+   */
+  setPace(pace) {
+    this._pace = this._createPace(pace);
+  }
+
+  /** Get current pace info for debugging/HUD. */
+  getPace() {
+    return this._pace;
+  }
+
+  /** Resolve both clocks for this tick. */
+  _getTimes() {
+    let tRun;
+
+    if (typeof this.scene.getRunElapsedSeconds === 'function') {
+      tRun = this.scene.getRunElapsedSeconds();
+    } else {
+      const now = this.scene.time?.now ?? 0;
+      tRun = Math.max(0, (now - (this.scene._runStartedAt ?? now)) / 1000);
+    }
+
+    const tDesign = this._pace?.toDesignTime ? this._pace.toDesignTime(tRun) : tRun;
+    return { tRun, tDesign };
+  }
+
+  // ---------------------------------------------------------------------------
+  // Timeline helpers
+  // ---------------------------------------------------------------------------
+
   /** Handle _peekNextTimelineEvent so this system stays coordinated. */
   _peekNextTimelineEvent(tSeconds) {
     if (!this.timeline || this._timelineIndex >= this.timeline.length) return null;
@@ -97,7 +188,7 @@ export class SpawnDirector {
   }
 
   /** Handle _runActiveScriptedEvent so this system stays coordinated. */
-  _runActiveScriptedEvent(tSeconds) {
+  _runActiveScriptedEvent(tRunSeconds, { tDesign } = {}) {
     const evt = this._activeEvent;
     if (!evt) return false;
 
@@ -119,7 +210,21 @@ export class SpawnDirector {
     const heroSprite = this.scene.hero?.sprite ?? this.scene.player;
     if (!heroSprite) return false;
 
-    const ctx = { scene: this.scene, enemyPools: this.enemyPools, heroSprite, modeKey: null };
+    // Timeline is authored in RUN TIME (your SpawnTimeline is already repaced),
+    // but we still expose both clocks for spawners/debugging.
+    const tDesignSeconds = Number.isFinite(tDesign) ? tDesign : tRunSeconds;
+
+    const ctx = {
+      scene: this.scene,
+      enemyPools: this.enemyPools,
+      heroSprite,
+      modeKey: null,
+
+      // Helpful for spawners/debugging:
+      tRun: tRunSeconds,
+      tDesign: tDesignSeconds,
+      pace: this._pace,
+    };
 
     for (const spawnDef of evt.spawns) {
       if (!spawnDef) continue;
@@ -133,7 +238,9 @@ export class SpawnDirector {
       if (!this.enemyPools?.canSpawn?.(mobKey)) continue;
 
       try {
-        const handled = spawnerFn(ctx, mobKey, tSeconds, entry) || 0;
+        // IMPORTANT: scripted timeline spawns should use RUN TIME seconds
+        // so they don't get double-compressed when pace mapping is enabled.
+        const handled = spawnerFn(ctx, mobKey, tRunSeconds, entry) || 0;
         if (handled > 0) didSpawn = true;
       } catch (err) {
         console.warn('[SpawnDirector] scripted spawner failed', spawnerKey, err);
@@ -184,7 +291,10 @@ export class SpawnDirector {
 
     Object.entries(this.spawnConfig.byMob).forEach(([mobKey, entry]) => {
       if (entry?.max !== undefined) {
-        this.enemyPools?.setMax?.(mobKey, entry.max);
+        // NOTE: If max is a function, it is applied dynamically each tick.
+        if (typeof entry.max !== 'function') {
+          this.enemyPools?.setMax?.(mobKey, entry.max);
+        }
       }
     });
 
@@ -196,8 +306,11 @@ export class SpawnDirector {
   /**
    * Resolve and apply per-mob max caps each tick.
    * Supports static numbers or functions of t (seconds).
+   *
+   * IMPORTANT: We evaluate against tDesign so caps authored for the old pacing
+   * still "hit" at the intended relative points of the run.
    */
-  _updateDynamicCaps(tSeconds) {
+  _updateDynamicCaps(tDesignSeconds) {
     if (!this.spawnConfig?.byMob) return;
 
     Object.entries(this.spawnConfig.byMob).forEach(([mobKey, entry]) => {
@@ -206,7 +319,7 @@ export class SpawnDirector {
       let resolvedMax = entry.max;
       if (typeof resolvedMax === 'function') {
         try {
-          resolvedMax = resolvedMax(tSeconds);
+          resolvedMax = resolvedMax(tDesignSeconds);
         } catch (err) {
           console.warn('[SpawnDirector] max resolver failed', mobKey, err);
           resolvedMax = undefined;
@@ -227,7 +340,7 @@ export class SpawnDirector {
     this._timer = this.scene.time.addEvent({
       delay: this.delayMs,
       loop: true,
-      callback: () => this.spawnTick()
+      callback: () => this.spawnTick(),
     });
   }
 
@@ -239,9 +352,15 @@ export class SpawnDirector {
   /**
    * Fast-forward the timeline to the provided timestamp without replaying
    * already elapsed events. Used by debug/dev flows.
+   *
+   * NOTE: This expects the provided time to be in **runtime seconds** (tRun),
+   * but we advance the timeline using tDesign so authored timeline pacing stays consistent.
    */
-  seekToTime(tSeconds) {
-    const t = Math.max(0, Number(tSeconds) || 0);
+  seekToTime(tRunSeconds) {
+    // Timeline is authored in RUN TIME seconds (your SpawnTimeline is already repaced),
+    // so seeking should advance using tRun (not tDesign) to avoid double-compression.
+    const tRun = Math.max(0, Number(tRunSeconds) || 0);
+
     this._activeEvent = null;
     this._activeEventEndAt = 0;
 
@@ -254,7 +373,8 @@ export class SpawnDirector {
     while (this._timelineIndex < this.timeline.length) {
       const evt = this.timeline[this._timelineIndex];
       const at = evt?.at ?? 0;
-      if (t < at) break;
+
+      if (tRun < at) break;
 
       if (evt?.once) {
         const evtId = this._getEventId(evt, this._timelineIndex);
@@ -264,7 +384,6 @@ export class SpawnDirector {
       this._timelineIndex += 1;
     }
   }
-
   /**
    * Update the delay between spawn checks at runtime.
    */
@@ -309,35 +428,31 @@ export class SpawnDirector {
     const heroSprite = this.scene.hero?.sprite ?? this.scene.player;
     if (!heroSprite) return;
 
-    // Time survived (seconds) — main driver for difficulty scaling
-    let t;
+    // tRun = seconds since run start (what the player experiences)
+    // tDesign = seconds mapped into the tuning "design run" timeline
+    const { tRun, tDesign } = this._getTimes();
 
-    if (typeof this.scene.getRunElapsedSeconds === 'function') {
-      t = this.scene.getRunElapsedSeconds();
-    } else {
-      const now = this.scene.time?.now ?? 0;
-      t = Math.max(0, (now - (this.scene._runStartedAt ?? now)) / 1000);
-    }
+    // Caps/curves authored for design time
+    this._updateDynamicCaps(tDesign);
 
-    this._updateDynamicCaps(t);
-
-    // --- Scripted timeline handling ---
+    // --- Scripted timeline handling (evaluated in design-time seconds) ---
+    // timeline evaluated in RUNTIME seconds (timeline is already repaced)
     if (this.timeline && this.timeline.length > 0) {
-      if (this._activeEvent && t >= this._activeEventEndAt) {
+      if (this._activeEvent && tRun >= this._activeEventEndAt) {
         this._activeEvent = null;
       }
 
       if (!this._activeEvent) {
-        const nextEvt = this._peekNextTimelineEvent(t);
-        if (nextEvt && t >= (nextEvt.at ?? 0)) {
+        const nextEvt = this._peekNextTimelineEvent(tRun);
+        if (nextEvt && tRun >= (nextEvt.at ?? 0)) {
           this._activeEvent = nextEvt;
-          this._activeEventEndAt = t + (nextEvt.duration ?? 0);
+          this._activeEventEndAt = tRun + (nextEvt.duration ?? 0);
           this._consumeTimelineEvent(nextEvt);
         }
       }
 
       if (this._activeEvent) {
-        const didSpawn = this._runActiveScriptedEvent(t);
+        const didSpawn = this._runActiveScriptedEvent(tRun, { tDesign });
 
         if (this._activeEvent.behavior === 'suspendWeighted' && didSpawn) {
           return;
@@ -350,11 +465,11 @@ export class SpawnDirector {
       return;
     }
 
-    // Resolve global spawn attempts for this tick
+    // Resolve global spawn attempts for this tick (evaluate in design time)
     let attempts = this.spawnsPerTick;
     if (typeof attempts === 'function') {
       try {
-        attempts = Number(attempts(t));
+        attempts = Number(attempts(tDesign));
       } catch (e) {
         console.warn('[SpawnDirector] spawnsPerTick function error', e);
         attempts = 1;
@@ -373,12 +488,16 @@ export class SpawnDirector {
       if (modes && modes.length > 0) {
         modes.forEach((modeEntry) => {
           if (!modeEntry) return;
+
           const from = modeEntry.from ?? 0;
           const to = modeEntry.to ?? Infinity;
-          if (t < from || t > to) return;
+
+          // Mode windows are authored in design time.
+          // `to` is treated as exclusive.
+          if (tDesign < from || tDesign >= to) return;
 
           const weightSource = weightOverride ?? modeEntry.weight ?? mobEntry.weight;
-          const weight = Math.max(0, evaluateWeight(weightSource, t));
+          const weight = Math.max(0, evaluateWeight(weightSource, tDesign));
           if (weight <= 0) return;
           if (!this.enemyPools?.canSpawn?.(mobKey)) return;
 
@@ -401,7 +520,7 @@ export class SpawnDirector {
         });
       } else {
         const weightSource = weightOverride ?? mobEntry.weight;
-        const weight = Math.max(0, evaluateWeight(weightSource, t));
+        const weight = Math.max(0, evaluateWeight(weightSource, tDesign));
         if (weight <= 0) return;
         if (!this.enemyPools?.canSpawn?.(mobKey)) return;
 
@@ -423,6 +542,11 @@ export class SpawnDirector {
       enemyPools: this.enemyPools,
       heroSprite,
       modeKey: null,
+
+      // Provide both clocks (spawners can opt into whichever they want).
+      tRun,
+      tDesign,
+      pace: this._pace,
     };
 
     // Perform spawn attempts (each may spawn multiple mobs depending on spawner)
@@ -467,7 +591,8 @@ export class SpawnDirector {
 
       let handled = 0;
       try {
-        handled = spawnerFn(ctx, mobKey, t, effectiveEntry) || 0;
+        // IMPORTANT: spawners receive tDesign so authored time scaling holds.
+        handled = spawnerFn(ctx, mobKey, tDesign, effectiveEntry) || 0;
       } catch (err) {
         console.warn(`[SpawnDirector] spawner ${spawnerKey} failed`, err);
       }

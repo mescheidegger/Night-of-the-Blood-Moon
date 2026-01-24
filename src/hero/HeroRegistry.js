@@ -206,7 +206,7 @@ const HEROES = {
     stats: {
       speed: 105,
       maxVelocity: 160,
-      maxHealth: 150,
+      maxHealth: 200,
       iframeMs: 200,
       drag: 0,
       damping: false
@@ -298,7 +298,7 @@ const HEROES = {
     stats: {
       speed: 110,
       maxVelocity: 160,
-      maxHealth: 125,
+      maxHealth: 175,
       iframeMs: 150,
       drag: 0,
       damping: false
@@ -390,7 +390,7 @@ const HEROES = {
     stats: {
       speed: 105,
       maxVelocity: 160,
-      maxHealth: 150,
+      maxHealth: 200,
       iframeMs: 200,
       drag: 0,
       damping: false
@@ -482,7 +482,7 @@ const HEROES = {
     stats: {
       speed: 115,
       maxVelocity: 165,
-      maxHealth: 100,
+      maxHealth: 150,
       iframeMs: 100,
       drag: 0,
       damping: false
@@ -569,7 +569,7 @@ const HEROES = {
     stats: {
       speed: 115,
       maxVelocity: 165,
-      maxHealth: 100,
+      maxHealth: 150,
       iframeMs: 100,
       drag: 0,
       damping: false
@@ -660,7 +660,7 @@ const HEROES = {
     stats: {
       speed: 115,
       maxVelocity: 160,
-      maxHealth: 100,
+      maxHealth: 150,
       iframeMs: 100,
       drag: 0,
       damping: false

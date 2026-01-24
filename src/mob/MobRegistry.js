@@ -391,7 +391,7 @@ export const MobRegistry = {
     },
 
     stats: {
-      speed: 110,
+      speed: 105,
       hp: 100,
       damage: 25,
       maxSpeed: 220,
