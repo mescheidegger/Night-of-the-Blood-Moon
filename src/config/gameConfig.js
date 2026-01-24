@@ -81,14 +81,14 @@ export const DEV_RUN = Object.freeze({
   enabled: false,
 
   // jump to late game
-  startElapsedSeconds: 2.8 * 60,
+  startElapsedSeconds: 8.9 * 60,
 
   // optional
   startLevel: 50,
   snapXPToLevelFloor: true,
 
   // Option A: simple list (all get weaponLevelDefault)
-  weapons: ['spear'],// 'windsummon', 'xbow', 'spearthrow', 'spearcross', 'greenfire'],
+  weapons: ['spear', 'windsummon', 'xbow', 'spearthrow', 'spearcross', 'greenfire'],
   weaponLevelDefault: 8,
 
   // Passives: duplicates = stacks (your PassiveManager supports this)
