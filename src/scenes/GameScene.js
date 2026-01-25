@@ -35,6 +35,7 @@ import { PauseMenu } from '../ui/PauseMenu.js';
 import { SettingsMenu } from '../ui/SettingsMenu.js';
 import { DEV_RUN } from '../config/gameConfig.js';
 import { WerewolfBossController } from '../mob/boss/WerewolfBossController.js';
+import { WerewolfEncounter } from '../encounters/WerewolfEncounter.js';
 
 /**
  * Main gameplay scene.
@@ -91,6 +92,12 @@ export class GameScene extends Phaser.Scene {
     this._setupWeapons();
     this._setupHUD();
     this._setupAudio();
+    this.werewolfEncounter = new WerewolfEncounter(this, {
+      mobKey: 'werewolf_boss',
+      telegraphSfx: 'sfx.boss.howl',
+      deathSfx: null, // add later when you have it
+      defaultLeadInMs: 2500,
+    });
     this._wireEvents();
     this._applyDevOverrides();
   }
@@ -351,12 +358,6 @@ export class GameScene extends Phaser.Scene {
     };
     this.events.on('enemy:released', this._onEnemyReleased);
 
-    this._onEnemyDied = (payload) => {
-      if (payload?.mobKey !== 'werewolf_boss') return;
-      this.endRun('win', { reason: 'bossKilled' });
-    };
-    this.events.on('enemy:died', this._onEnemyDied);
-
     // 🔑 Pause key handling (Esc / P)
     this._onPauseKey = (event) => {
       const toggled = this.togglePauseMenu();
@@ -388,6 +389,9 @@ export class GameScene extends Phaser.Scene {
       this.enemyAI?.destroy?.();
       this._bossControllers?.forEach?.((controller) => controller.destroy());
       this._bossControllers?.clear?.();
+      this.werewolfEncounter?.destroy?.();
+      this.werewolfEncounter = null;
+
       //this.enemyProjectiles?.destroy?.(); - updated to be destroyed in system file
       this.hud?.destroy?.();
       this.groundLayer?.destroy?.();
@@ -478,6 +482,10 @@ export class GameScene extends Phaser.Scene {
       this.spawnDirector?.setWeightedEnabled?.(false);
     }
 
+    if (payload?.encounter === 'werewolf' && payload?.phase === 'start') {
+      this.werewolfEncounter?.start(payload);
+    }
+
     if (payload?.arena) {
       this._finale = {
         lockAtMs: this.time.now + (payload.cleanupMs ?? 15000),
@@ -540,6 +548,24 @@ export class GameScene extends Phaser.Scene {
     this.endRun('loss', { reason: 'playerDied' });
   }
 
+  _getHeroIdleAnimKey() {
+    const heroEntry = this.heroEntry ?? null;
+    const heroKey = this.hero?.key ?? heroEntry?.key ?? null;
+    const prefix = heroEntry?.animationPrefix ?? heroKey ?? heroEntry?.key ?? 'hero';
+    const dir = this.playerFacing ?? heroEntry?.defaultFacing ?? 'down';
+
+    // Common NOTBM keys: `${prefix}:idle-${dir}`
+    const preferred = `${prefix}:idle-${dir}`;
+    if (this.anims?.exists?.(preferred)) return preferred;
+
+    // Graceful fallback
+    const fallback = `${prefix}:idle-down`;
+    if (this.anims?.exists?.(fallback)) return fallback;
+
+    return null;
+  }
+
+
   /** Handle _acquireSimulationPause so this system stays coordinated. */
   _acquireSimulationPause(source = 'unknown') {
     if (this._pauseSources.has(source)) return;
@@ -552,75 +578,120 @@ export class GameScene extends Phaser.Scene {
       return;
     }
 
-    // First pauser: snapshot and freeze everything.
-    // We only hard-pause Arcade physics for the pause menu (to avoid O(N) stalls
-    // when huge pools exist). Level-up uses a "soft pause" and freezes key bodies.
-    const pausePhysics = source === 'pauseMenu';
-    const freezeLevelUpBodies = source === 'levelup';
+    // ------------------------------------------------------------------
+    // Pause modes
+    // ------------------------------------------------------------------
+    // pauseMenu: hard-pause time + physics (true pause)
+    // levelup:   pause time (update loop early-outs), physics may keep stepping,
+    //            so freeze bodies manually
+    // bossDeath: keep time running (so boss death anim/tweens/delayedCall work),
+    //            but pause physics + freeze bodies so nothing drifts
+    const pausePhysics = (source === 'pauseMenu' || source === 'bossDeath');
+    const freezeBodies = (source === 'levelup' || source === 'bossDeath');
+    const pauseTime = (source === 'pauseMenu' || source === 'levelup'); // NOT bossDeath
 
-    const heroBody = this.hero?.sprite?.body ?? null;
+    // NEW: for bossDeath + pauseMenu, pause hero animation so we don’t “run in place”
+    const pauseHeroAnim = (source === 'pauseMenu' || source === 'bossDeath');
+
+    const heroSprite = this.hero?.sprite ?? null;
+    const heroBody = heroSprite?.body ?? null;
+
+    const heroWasAnimPlaying = !!heroSprite?.anims?.isPlaying;
+    const heroAnimKey = heroSprite?.anims?.currentAnim?.key ?? null;
+    const heroAnimProgress = heroSprite?.anims?.getProgress?.() ?? 0;
 
     this._pauseSnapshot = {
+      source,
       timeScale: this.time?.timeScale ?? 1,
       physicsTimeScale: this.physics?.world?.timeScale ?? 1,
       pausedPhysics: pausePhysics,
 
-      // Level-up: we skip GameScene.update(), so controllers won't zero velocity.
-      // Freeze hero + active enemies so nothing drifts while physics keeps stepping.
-      freezeLevelUpBodies,
+      freezeBodies,
       heroBodyWasEnabled: heroBody ? !!heroBody.enable : undefined,
 
-      // Track which enemy bodies we disabled so we can restore them on resume.
-      frozenEnemyBodies: []
+      // NEW: animation snapshot for hero
+      heroAnim: {
+        pauseHeroAnim,
+        wasPlaying: heroWasAnimPlaying,
+        key: heroAnimKey,
+        progress: heroAnimProgress,
+        timeScale: heroSprite?.anims?.timeScale ?? 1,
+      },
+
+      frozenEnemyBodies: [],
     };
 
-    this._pausedAt = this.time?.now ?? 0;
+  this._pausedAt = this.time?.now ?? 0;
 
-    // Pause timers/tweens that respect TimeScale; GameScene.update() also early-outs.
+  // Pause timers/tweens that respect TimeScale; GameScene.update() also early-outs.
+  if (pauseTime) {
     this.time.timeScale = 0;
+  }
 
-    // Hard-pause physics only for pause menu.
-    if (pausePhysics && this.physics?.world) {
-      this.physics.world.timeScale = 0;
-      this.physics.world.pause();
-    }
+  // Hard-pause physics for pause menu AND bossDeath cinematic.
+  if (pausePhysics && this.physics?.world) {
+    this.physics.world.timeScale = 0;
+    this.physics.world.pause();
+  }
 
-    this.playerInputDisabled = true;
-    this.playerCombatDisabled = true;
-    this.isSimulationPaused = true;
+  this.playerInputDisabled = true;
+  this.playerCombatDisabled = true;
+  this.isSimulationPaused = true;
 
-    // Soft-pause (level-up): freeze hero + active enemies so they don't continue drifting
-    // behind the modal while physics keeps stepping.
-    if (freezeLevelUpBodies) {
-      if (heroBody) {
-        heroBody.setVelocity?.(0, 0);
-        heroBody.setAcceleration?.(0, 0);
-        heroBody.enable = false;
-      }
+  // Stop hero movement immediately.
+  if (heroBody) {
+    heroBody.setVelocity?.(0, 0);
+    heroBody.setAcceleration?.(0, 0);
+  }
 
-      const group = this.enemyPools?.getAllGroup?.();
-      group?.children?.iterate?.((enemy) => {
-        if (!enemy?.active) return;
+  // Pause hero animation for bossDeath/pauseMenu so we don’t “run in place”
+  if (pauseHeroAnim && heroSprite?.anims) {
+    heroSprite.anims.stop();
 
-        const body = enemy?.body;
-        if (!body) return;
-
-        body.setVelocity?.(0, 0);
-        body.setAcceleration?.(0, 0);
-
-        // Disable body so Arcade won't integrate/collide it during the modal.
-        // Track the sprite so we can re-enable later.
-        body.enable = false;
-        this._pauseSnapshot.frozenEnemyBodies.push(enemy);
-      });
-    } else {
-      // Non-levelup pause: just stop any currently moving enemies (active only).
-      this.enemyPools?.getAllGroup?.()?.children?.iterate?.((enemy) => {
-        if (!enemy?.active) return;
-        enemy?.body?.setVelocity?.(0, 0);
-      });
+    const idleKey = this._getHeroIdleAnimKey?.();
+    if (idleKey) {
+      heroSprite.play(idleKey, true);
+      heroSprite.anims.timeScale = 1;
     }
   }
+
+  // Freeze bodies when needed (level-up and boss-death cinematic).
+  if (freezeBodies) {
+    if (heroBody) {
+      // Disable body so Arcade won't integrate/collide it during the pause window.
+      heroBody.enable = false;
+    }
+
+    const group = this.enemyPools?.getAllGroup?.();
+    group?.children?.iterate?.((enemy) => {
+      if (!enemy?.active) return;
+
+      // IMPORTANT: during bossDeath, do NOT fully freeze/disable the boss body here.
+      // The encounter already stops its motion and wants its anim/FX to complete.
+      if (source === 'bossDeath' && (enemy.mobKey === 'werewolf_boss' || enemy._deathSequenceLock)) {
+        enemy.body?.setVelocity?.(0, 0);
+        enemy.body?.setAcceleration?.(0, 0);
+        return;
+      }
+
+      const body = enemy?.body;
+      if (!body) return;
+
+      body.setVelocity?.(0, 0);
+      body.setAcceleration?.(0, 0);
+
+      body.enable = false;
+      this._pauseSnapshot.frozenEnemyBodies.push(enemy);
+    });
+  } else {
+    // Non-freeze pause: just stop any currently moving enemies (active only).
+    this.enemyPools?.getAllGroup?.()?.children?.iterate?.((enemy) => {
+      if (!enemy?.active) return;
+      enemy?.body?.setVelocity?.(0, 0);
+      enemy?.body?.setAcceleration?.(0, 0);
+    });
+  }
+}
 
   /** Handle _releaseSimulationPause so this system stays coordinated. */
   _releaseSimulationPause(source = 'unknown') {
@@ -639,25 +710,26 @@ export class GameScene extends Phaser.Scene {
       this._pausedAt = null;
     }
 
-    // Restore snapshot.
-    this.time.timeScale = this._pauseSnapshot?.timeScale ?? 1;
+    const snap = this._pauseSnapshot ?? {};
+    this.time.timeScale = snap.timeScale ?? 1;
 
-    if (this._pauseSnapshot?.pausedPhysics && this.physics?.world) {
-      this.physics.world.timeScale = this._pauseSnapshot?.physicsTimeScale ?? 1;
+    if (snap.pausedPhysics && this.physics?.world) {
+      this.physics.world.timeScale = snap.physicsTimeScale ?? 1;
       this.physics.world.resume();
     }
 
-    // If we froze bodies for a level-up modal, re-enable them now.
-    if (this._pauseSnapshot?.freezeLevelUpBodies) {
-      const heroBody = this.hero?.sprite?.body ?? null;
+    // If we froze bodies (level-up or bossDeath), re-enable them now.
+    if (snap.freezeBodies) {
+      const heroSprite = this.hero?.sprite ?? null;
+      const heroBody = heroSprite?.body ?? null;
+
       if (heroBody) {
-        heroBody.enable = this._pauseSnapshot.heroBodyWasEnabled ?? true;
-        // Resume consistently "stopped" instead of resuming pre-modal drift.
+        heroBody.enable = snap.heroBodyWasEnabled ?? true;
         heroBody.setVelocity?.(0, 0);
         heroBody.setAcceleration?.(0, 0);
       }
 
-      const frozen = this._pauseSnapshot?.frozenEnemyBodies;
+      const frozen = snap.frozenEnemyBodies;
       if (Array.isArray(frozen)) {
         frozen.forEach((enemy) => {
           const body = enemy?.body;
@@ -669,13 +741,28 @@ export class GameScene extends Phaser.Scene {
       }
     }
 
+    // NEW: resume hero animation if we paused it
+    const heroSprite = this.hero?.sprite ?? null;
+    const heroAnimSnap = snap.heroAnim ?? null;
+    if (heroAnimSnap?.pauseHeroAnim && heroSprite?.anims) {
+      // If you want to restore precisely:
+      // - resume only if it was playing before
+      // - restart the same anim at similar progress
+      if (heroAnimSnap.wasPlaying && heroAnimSnap.key && this.anims?.exists?.(heroAnimSnap.key)) {
+        heroSprite.play(heroAnimSnap.key, true);
+        // Try to restore progress roughly (Phaser supports setProgress on AnimationState in recent versions)
+        heroSprite.anims.setProgress?.(heroAnimSnap.progress ?? 0);
+      } else {
+        heroSprite.anims.stop();
+      }
+      heroSprite.anims.timeScale = heroAnimSnap.timeScale ?? 1;
+    }
+
     this.playerInputDisabled = false;
     this.playerCombatDisabled = false;
     this._pauseSnapshot = null;
     this.isSimulationPaused = false;
   }
-
-
 
   /** Handle _markRunStarted so this system stays coordinated. */
   _markRunStarted() {

@@ -522,28 +522,27 @@ export const SpawnTimeline = [
     ],
   }),
 
-  // 15: Lone werewolf curtain call (kicks off exactly at TARGET_RUN_MINUTES)
+  // 15: Werewolf finale (control-only). Encounter module will handle lead-in + spawn.
   timelineEvent({
-    id: 'finale_control_15min',
+    id: 'werewolf_finale_control',
     atMin: TARGET_RUN_MINUTES,
-    duration: 15,
+    duration: 25,
     control: {
+      encounter: 'werewolf',
+      phase: 'start',
+
+      // telegraph lead-in
+      leadInMs: 10000,
+      telegraphSfx: { key: 'sfx.boss.howl', bus: 'sfx', volume: 5.5, maxSimultaneous: 1, minIntervalMs: 2000 },
+
+      //Boss death
+      winSfx: 'sfx.boss.death', 
+      leadOutMs: 5000, 
+
+      // your existing finale controls
       disableWeightedSpawns: true,
-      cleanupMs: 15000,
+      cleanupMs: 10000,
       arena: { width: 1800, height: 1000 },
     },
-  }),
-  timelineEvent({
-    id: 'werewolf_finale_15min',
-    atMin: TARGET_RUN_MINUTES,
-    duration: 20,
-    behavior: 'suspendWeighted',
-    spawns: [
-      bossSpawn('werewolf_boss', {
-        appearAt: mins(TARGET_RUN_MINUTES),
-        cooldownMs: 60000,
-        spawn: { radius: 620 },
-      }),
-    ],
   }),
 ];

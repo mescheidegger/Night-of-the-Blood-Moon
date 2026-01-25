@@ -100,6 +100,14 @@ export const AUDIO_MANIFEST = [
     url: 'audio/drops/toretire/xppickup.ogg'
   },
   {
+    key: 'sfx.boss.howl',
+    url: 'audio/mobs/toretire/howl.ogg'
+  },
+  {
+    key: 'sfx.boss.death',
+    url: 'audio/mobs/toretire/weredeath.ogg'
+  },
+  {
     key: 'music.game.loop',
     url: 'audio/music/gameaudio.ogg'
   }

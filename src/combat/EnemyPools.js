@@ -120,6 +120,10 @@ export class EnemyPools {
   release(enemy) {
     if (!enemy) return;
 
+    // 🔒 Boss death / cinematic sequences can temporarily "lock" an enemy
+    // to prevent pooling cleanup while an animation/audio sequence plays.
+    if (enemy._deathSequenceLock) return;
+
     const key = enemy.mobKey ?? enemy.type ?? null;
     const pool = key ? this.pools.get(key) : null;
 
