@@ -4,6 +4,8 @@ import { PassiveLoadoutBar } from './PassiveLoadoutBar.js';
 import { VirtualJoystick } from './VirtualJoystick.js';
 import { PauseButton } from './PauseButton.js';
 import { DebugOverlay } from './DebugOverlay.js';
+import { PlayerHUD } from './PlayerHUD.js';
+import { DEV_RUN } from '../config/gameConfig.js';
 
 /** Provide shouldUseTouchUI so callers can reuse shared logic safely. */
 export function shouldUseTouchUI() {
@@ -15,15 +17,22 @@ export function shouldUseTouchUI() {
 }
 
 /**
- * HUDManager owns the on-screen UI for the run (loadout bar + debug stats).
- * Run timing is based on the scene clock (`scene.time.now`) and a startTime
- * provided by GameScene via `setStartTime`.
+ * HUDManager owns the on-screen UI for the run (player HUD, loadout bars, debug stats, touch controls).
+ * Run timing is based on the scene clock (`scene.time.now`) and/or a clock helper
+ * provided by GameScene via `getRunElapsedMs`.
  */
 export class HUDManager {
   /** Initialize HUDManager state so runtime dependencies are ready. */
   constructor(
     scene,
-    { events, initialLoadout = [], initialPassives = [], onPauseRequested, startTime = null } = {}
+    {
+      events,
+      initialLoadout = [],
+      initialPassives = [],
+      onPauseRequested,
+      startTime = null,
+      showDebug = DEV_RUN?.enabled === true,
+    } = {}
   ) {
     this.scene = scene;
     this.events = events ?? scene.events;
@@ -32,6 +41,18 @@ export class HUDManager {
     // May be null until GameScene calls setStartTime()
     this.startTime = startTime;
 
+    // -----------------------------
+    // Run stats tracked by HUDManager
+    // -----------------------------
+    this.totalKills = 0;
+    this._onEnemyDied = () => {
+      this.totalKills += 1;
+    };
+    this.events?.on?.('enemy:died', this._onEnemyDied);
+
+    // -----------------------------
+    // Bars
+    // -----------------------------
     this.loadoutBar = new LoadoutBar(scene, {
       events: this.events,
       cooldownColor: 0xff3b3b,
@@ -39,7 +60,7 @@ export class HUDManager {
       cooldownBlend: Phaser.BlendModes.MULTIPLY,
     });
 
-    if (initialLoadout && initialLoadout.length > 0) {
+    if (Array.isArray(initialLoadout) && initialLoadout.length > 0) {
       this.loadoutBar.render(initialLoadout);
     }
 
@@ -50,10 +71,22 @@ export class HUDManager {
 
     this.passiveBar.render(initialPassives ?? []);
 
-    this.isDebugVisible = true; //Boolean(import.meta?.env?.DEV);
-    this.debugOverlay = new DebugOverlay(scene, { depth: 70 });
+    // -----------------------------
+    // Player-facing HUD (new)
+    // -----------------------------
+    this.playerHUD = new PlayerHUD(scene, { depth: 70 });
+    this.playerHUD.setVisible(true);
+
+    // -----------------------------
+    // Debug overlay (existing, kept separate)
+    // -----------------------------
+    this.isDebugVisible = !!showDebug;
+    this.debugOverlay = new DebugOverlay(scene, { depth: 75 });
     this.debugOverlay.setVisible(this.isDebugVisible);
 
+    // -----------------------------
+    // Touch controls
+    // -----------------------------
     this.joystick = null;
     this.pauseButton = null;
     this._onHybridTouchStart = null;
@@ -73,14 +106,19 @@ export class HUDManager {
       this._onHybridTouchStart = (pointer) => {
         if (this.joystick) return;
         if (pointer?.pointerType !== 'touch') return;
+
         this._createTouchControls();
         this._onResize({ width: scene.scale.width, height: scene.scale.height });
+
         this.scene.input?.off('pointerdown', this._onHybridTouchStart);
         this._onHybridTouchStart = null;
       };
       this.scene.input?.on('pointerdown', this._onHybridTouchStart);
     }
 
+    // -----------------------------
+    // Debug toggles
+    // -----------------------------
     this._onToggleDebug = () => {
       this.isDebugVisible = !this.isDebugVisible;
       this.debugOverlay?.setVisible(this.isDebugVisible);
@@ -89,7 +127,9 @@ export class HUDManager {
     this.scene.input?.keyboard?.on('keydown-F3', this._onToggleDebug);
     this.scene.input?.keyboard?.on('keydown-BACKTICK', this._onToggleDebug);
 
+    // -----------------------------
     // Layout helper (run now + on real resizes)
+    // -----------------------------
     this._onResize = (gameSize) => {
       const width = (gameSize?.width ?? this.scene.scale.width);
       const height = (gameSize?.height ?? this.scene.scale.height);
@@ -122,16 +162,33 @@ export class HUDManager {
 
       this.loadoutBar?.setPosition(loadoutX, loadoutY);
       this.passiveBar?.setPosition(passiveX, passiveY);
-      this.debugOverlay?.setPosition(padding, padding);
+
+      // Top-left overlays
+      this.playerHUD?.setPosition(padding, padding);
+
+      // Keep debug separate (slightly lower) so both can coexist when debug is enabled
+      const debugOffsetY = 64; // enough to clear PlayerHUD height
+      this.debugOverlay?.setPosition(padding, padding + debugOffsetY);
+
       if (this.joystick) {
         this.joystick.setPosition(80, height - 80);
       }
+
       if (this.pauseButton) {
-        this.pauseButton.setPosition(width - pausePadding - pauseButtonSize * 0.5, pausePadding + pauseButtonSize * 0.5);
+        this.pauseButton.setPosition(
+          width - pausePadding - pauseButtonSize * 0.5,
+          pausePadding + pauseButtonSize * 0.5
+        );
       }
     };
+
     scene.scale.on('resize', this._onResize);
     this._onResize({ width: scene.scale.width, height: scene.scale.height });
+
+    // -----------------------------
+    // Update cadence control
+    // -----------------------------
+    this._nextStatsAt = 0;
   }
 
   /**
@@ -141,35 +198,46 @@ export class HUDManager {
     this.startTime = startTime;
   }
 
+  /** Compute run elapsed ms using the scene helper if available. */
+  _getElapsedMs(now) {
+    if (typeof this.scene.getRunElapsedMs === 'function') {
+      return this.scene.getRunElapsedMs();
+    }
+    const effectiveStart = Number.isFinite(this.startTime) ? this.startTime : now;
+    return Math.max(0, now - effectiveStart);
+  }
+
   /**
-   * Refresh debug stats at a coarse cadence.
+   * Refresh HUD stats at a coarse cadence.
    * Uses the scene clock so it respects timeScale and scene lifecycle.
    */
   update() {
-    if (!this.debugOverlay) return;
-
     const now = this.scene?.time?.now ?? 0;
 
-    // ~4 times per second
-    if (now % 250 < 16) {
+    // ~4 times per second, stable cadence
+    if (now < (this._nextStatsAt ?? 0)) return;
+    this._nextStatsAt = now + 250;
+
+    const elapsedMs = this._getElapsedMs(now);
+
+    const xp = this.scene.playerXP ?? 0;
+
+    this.playerHUD?.setStats({
+      elapsedMs,
+      kills: this.totalKills,
+      xp,
+    });
+
+
+    // Debug overlay updates only if present (and can be toggled)
+    if (this.debugOverlay) {
       const enemyGroup = this.scene.enemyPools?.getAllGroup?.();
       const enemies = enemyGroup?.countActive?.(true) ?? 0;
       const drops = this.scene.dropManager?.getGroup?.()?.countActive?.(true) ?? 0;
-
-      let elapsedMs;
-
-      if (typeof this.scene.getRunElapsedMs === 'function') {
-        elapsedMs = this.scene.getRunElapsedMs();
-      } else {
-        const effectiveStart = Number.isFinite(this.startTime) ? this.startTime : now;
-        elapsedMs = Math.max(0, now - effectiveStart);
-      }
-
-      const elapsedSeconds = elapsedMs / 1000;
       const xp = this.scene.playerXP ?? 0;
 
       this.debugOverlay.setStats({
-        elapsedSeconds,
+        elapsedSeconds: elapsedMs / 1000,
         enemies,
         drops,
         xp,
@@ -187,23 +255,37 @@ export class HUDManager {
    */
   destroy() {
     this.scene.scale.off('resize', this._onResize);
+
     if (this._onHybridTouchStart) {
       this.scene.input?.off('pointerdown', this._onHybridTouchStart);
+      this._onHybridTouchStart = null;
     }
+
     this.scene.input?.keyboard?.off('keydown-F3', this._onToggleDebug);
     this.scene.input?.keyboard?.off('keydown-BACKTICK', this._onToggleDebug);
+
+    this.events?.off?.('enemy:died', this._onEnemyDied);
+    this._onEnemyDied = null;
+
     this.loadoutBar?.destroy();
     this.passiveBar?.destroy();
+    this.playerHUD?.destroy();
     this.debugOverlay?.destroy();
     this.joystick?.destroy();
     this.pauseButton?.destroy();
 
     this.scene = null;
     this.events = null;
+    this.onPauseRequested = null;
+
     this.loadoutBar = null;
     this.passiveBar = null;
+    this.playerHUD = null;
     this.debugOverlay = null;
     this.joystick = null;
     this.pauseButton = null;
+
+    this.totalKills = 0;
+    this._nextStatsAt = 0;
   }
 }

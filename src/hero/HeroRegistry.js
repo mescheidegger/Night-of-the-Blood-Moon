@@ -503,10 +503,10 @@ const HEROES = {
     defaultFacing: 'right',
     progression: {
       3: ['windsummon'],
-      6: ['xbow'],
-      9: ['spearthrow'],
-      13: ['spearcross'],
-      18: ['greenfire']
+      7: ['xbow'],
+      12: ['spearthrow'],
+      18: ['spearcross'],
+      24: ['greenfire']
     },
     weapons: {
       allowed: [
