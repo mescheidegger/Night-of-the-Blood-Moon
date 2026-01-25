@@ -417,7 +417,8 @@ export class ProjectileWeaponController extends WeaponControllerBase {
           timing: 'impact'
         },
         damagePipeline: this.damagePipeline,
-        sourceKey: this.baseConfig?.key
+        sourceKey: this.baseConfig?.key,
+        payload
       });
     }
 

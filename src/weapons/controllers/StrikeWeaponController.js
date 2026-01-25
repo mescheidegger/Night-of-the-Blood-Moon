@@ -119,7 +119,8 @@ export class StrikeWeaponController extends WeaponControllerBase {
           cfg: aoeConfig,
           damagePipeline: this.damagePipeline,
           sourceKey: this.baseConfig?.key,
-          exclude: enemy // don't double-damage the struck target
+          exclude: enemy, // don't double-damage the struck target,
+          payload
         });
       },
       defaultFrameIndex: 0

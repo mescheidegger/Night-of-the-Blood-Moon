@@ -333,7 +333,8 @@ export class SparkCrossController extends WeaponControllerBase {
         baseDamage: payload.damage,
         cfg: aoeCfg,
         damagePipeline: this.damagePipeline,
-        sourceKey: payload.sourceKey
+        sourceKey: payload.sourceKey,
+        payload
       });
     });
   }

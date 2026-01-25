@@ -148,7 +148,8 @@ export class ClusterBombWeaponController extends WeaponControllerBase {
           baseDamage: payload.damage,
           cfg: aoeCfg,
           damagePipeline: this.damagePipeline,
-          sourceKey: this.baseConfig?.key
+          sourceKey: this.baseConfig?.key,
+          payload
         });
       },
       defaultFrameIndex: 10 // If animation not found, use this frame to trigger AoE

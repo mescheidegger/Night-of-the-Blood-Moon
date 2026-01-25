@@ -2,7 +2,7 @@
 // height value acts as a minimum; the panel expands when content requires
 // additional vertical space to keep the buttons from overlapping the stats.
 const PANEL_WIDTH = 360;
-const PANEL_HEIGHT = 240;
+const PANEL_HEIGHT = 280;
 const PANEL_DEPTH = 260;
 const BUTTON_WIDTH = 200;
 const BUTTON_HEIGHT = 48;
@@ -19,7 +19,15 @@ export class EndRunMenu {
   /**
    * @param {Phaser.Scene} scene
    * @param {{
-   *   stats?: { timeSurvived?: number, kills?: number, xpEarned?: number },
+   *   stats?: {
+   *     timeSurvived?: number,            // seconds (legacy)
+   *     kills?: number,
+   *     xpEarned?: number,
+   *     damageDealt?: number,
+   *     // or RunStatsTracker snapshot shape:
+   *     timeSurvivedSeconds?: number,
+   *     timeSurvivedMs?: number,
+   *   },
    *   title?: string,
    *   subtitle?: string,
    *   primaryLabel?: string,
@@ -38,7 +46,7 @@ export class EndRunMenu {
     onMainMenu
   } = {}) {
     this.scene = scene;
-    this.stats = stats;
+    this.stats = stats ?? {};
     this.title = title;
     this.subtitle = subtitle;
     this.primaryLabel = primaryLabel;
@@ -163,26 +171,66 @@ export class EndRunMenu {
     this.bindKeys();
   }
 
+  /** Normalize stats so EndRunMenu accepts either legacy fields or RunStatsTracker snapshot shape. */
+  _normalizeStats() {
+    const s = this.stats ?? {};
+
+    // Prefer RunStatsTracker snapshot shape
+    const timeSecondsFromSnapshot = Number(s.timeSurvivedSeconds);
+    const timeMsFromSnapshot = Number(s.timeSurvivedMs);
+
+    let timeSurvivedSeconds;
+    if (Number.isFinite(timeSecondsFromSnapshot)) {
+      timeSurvivedSeconds = timeSecondsFromSnapshot;
+    } else if (Number.isFinite(timeMsFromSnapshot)) {
+      timeSurvivedSeconds = timeMsFromSnapshot / 1000;
+    } else {
+      // Legacy field: timeSurvived is already seconds
+      const legacy = Number(s.timeSurvived);
+      timeSurvivedSeconds = Number.isFinite(legacy) ? legacy : 0;
+    }
+
+    const kills = Number.isFinite(Number(s.kills)) ? Number(s.kills) : null;
+    const xpEarned = Number.isFinite(Number(s.xpEarned)) ? Number(s.xpEarned) : null;
+    const damageDealt = Number.isFinite(Number(s.damageDealt)) ? Number(s.damageDealt) : null;
+
+    return {
+      timeSurvivedSeconds: Math.max(0, timeSurvivedSeconds || 0),
+      kills: kills == null ? null : Math.max(0, kills),
+      xpEarned: xpEarned == null ? null : Math.max(0, xpEarned),
+      damageDealt: damageDealt == null ? null : Math.max(0, damageDealt),
+    };
+  }
+
   /**
    * Generates the lines displayed in the stats block.  Additional metrics can
    * be appended here without touching layout code elsewhere.
    */
   composeStats() {
+    const s = this._normalizeStats();
+
     const lines = [];
-    const timeSurvived = typeof this.stats.timeSurvived === 'number' ? this.stats.timeSurvived : 0;
+    const timeSurvived = s.timeSurvivedSeconds;
+
     const minutes = Math.floor(timeSurvived / 60);
     const seconds = timeSurvived - minutes * 60;
     const formatted = minutes > 0
       ? `${minutes}m ${seconds.toFixed(1)}s`
       : `${seconds.toFixed(1)}s`;
+
     lines.push(`Time Survived: ${formatted}`);
 
-    if (typeof this.stats.kills === 'number') {
-      lines.push(`Enemies Defeated: ${this.stats.kills}`);
+    if (typeof s.kills === 'number') {
+      lines.push(`Enemies Defeated: ${s.kills}`);
     }
 
-    if (typeof this.stats.xpEarned === 'number') {
-      lines.push(`XP Earned: ${this.stats.xpEarned}`);
+    if (typeof s.xpEarned === 'number') {
+      lines.push(`XP Earned: ${s.xpEarned}`);
+    }
+
+    // Total Damage Dealt
+    if (typeof s.damageDealt === 'number') {
+      lines.push(`Damage Dealt: ${Math.round(s.damageDealt)}`);
     }
 
     return lines;
@@ -303,6 +351,7 @@ export class EndRunMenu {
     this.panel?.destroy(true);
 
     this.scene = null;
+    this.stats = null;
   }
 }
 

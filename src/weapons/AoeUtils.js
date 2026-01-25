@@ -7,7 +7,11 @@ export function runAoe({
   cfg,
   damagePipeline,
   sourceKey,
-  exclude = null
+  exclude = null,
+
+  // ✅ NEW: optional full damage payload from controller (crit/status/etc).
+  // If provided, we preserve fields and only override `damage` per-target.
+  payload = null
 }) {
   if (!cfg?.enabled || !enemyGroup || !origin) return 0;
 
@@ -20,10 +24,11 @@ export function runAoe({
   const falloff = cfg.falloff ?? 0;
 
   const arcDeg = cfg.arcDeg;
-  const hasDirectionalArc = Number.isFinite(arcDeg) && arcDeg > 0 && arcDeg < 360 && Number.isFinite(cfg.angleRad);
+  const hasDirectionalArc =
+    Number.isFinite(arcDeg) && arcDeg > 0 && arcDeg < 360 && Number.isFinite(cfg.angleRad);
   const halfArcRad = hasDirectionalArc ? ((arcDeg / 2) * Math.PI) / 180 : 0;
 
-  // Optional forgiveness at cone edges (you already added arcSlack previously; keep if present)
+  // Optional forgiveness at cone edges
   const arcSlack = Number.isFinite(cfg.arcSlack) ? cfg.arcSlack : 0.0;
 
   let minDot = hasDirectionalArc ? Math.cos(halfArcRad) : -1;
@@ -39,6 +44,19 @@ export function runAoe({
   const innerForgive = Math.max(0, Number.isFinite(cfg.innerForgivenessPx) ? cfg.innerForgivenessPx : 0);
 
   let hitCount = 0;
+
+  // Normalize a "base payload" we can clone per hit.
+  // - If caller passed payload, prefer it
+  // - Else build a minimal one using the old fields
+  const basePayload = payload && typeof payload === 'object'
+    ? payload
+    : {
+        crit: false,
+        critChance: 0,
+        critMult: 1,
+        status: [],
+        sourceKey
+      };
 
   enemyGroup.children?.iterate?.((enemy) => {
     if (!enemy || !enemy.active || enemy === exclude) return;
@@ -58,20 +76,21 @@ export function runAoe({
         const dot = normX * facingVec.x + normY * facingVec.y;
         if (dot < minDot) return;
       }
-      // else: within innerForgive → treated as “in front”
     }
 
     const falloffMult = Math.max(0, 1 - (falloff * (distance / 100)));
     const finalDamage = baseDamage * damageMult * falloffMult;
 
     if (finalDamage > 0) {
-      damagePipeline?.applyHit(enemy, {
+      // ✅ Clone and override only damage + sourceKey.
+      // This preserves crit + status + any future fields (lifesteal tags, etc.)
+      const hitPayload = {
+        ...basePayload,
         damage: finalDamage,
-        critChance: 0,
-        critMult: 1,
-        status: [],
-        sourceKey
-      });
+        sourceKey: basePayload?.sourceKey ?? sourceKey
+      };
+
+      damagePipeline?.applyHit(enemy, hitPayload);
 
       hitCount += 1;
       if (hitCount >= maxTargets) {

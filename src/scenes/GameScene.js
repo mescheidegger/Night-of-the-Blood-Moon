@@ -338,7 +338,8 @@ export class GameScene extends Phaser.Scene {
       return {
         timeSurvived: snapshot.timeSurvivedSeconds,
         kills: snapshot.kills,
-        xpEarned: snapshot.xpEarned
+        xpEarned: snapshot.xpEarned,
+        damageDealt: snapshot.damageDealt,
       };
     }
 

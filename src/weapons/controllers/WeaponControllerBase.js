@@ -126,12 +126,35 @@ export class WeaponControllerBase {
   /** Handle buildDamagePayload so this system stays coordinated. */
   buildDamagePayload() {
     const cfgDamage = this.effectiveConfig?.damage ?? {};
-    const damage = this.computeShotDamage();
+
+    // Your existing final damage (already includes passive modifiers + difficulty mult)
+    const baseDamage = this.computeShotDamage();
+
+    // Pull crit config from effective weapon config
+    const critChance = Math.max(0, Number(cfgDamage?.crit?.chance ?? 0) || 0);
+    const critMult = Math.max(1, Number(cfgDamage?.crit?.mult ?? 1.5) || 1.5);
+
+    // Roll crit once per "attack instance" (per strike, per projectile fired, etc.)
+    const isCrit = critChance > 0 ? (Math.random() < critChance) : false;
+
+    // Apply crit multiplier to the already-computed base damage
+    const finalDamage = isCrit ? (baseDamage * critMult) : baseDamage;
+
+    // Keep DamagePayload helper for status, etc., but don't let it own crit logic yet
+    const payload = DamagePayload.fromConfig({
+      ...this.effectiveConfig,
+      damage: {
+        ...cfgDamage,
+        base: finalDamage
+      }
+    });
+
     return {
-      ...DamagePayload.fromConfig({
-        ...this.effectiveConfig,
-        damage: { ...cfgDamage, base: damage }
-      }),
+      ...payload,
+      damage: finalDamage,           // ensure we keep the numeric value we computed
+      crit: isCrit,                  // ✅ what DamagePipeline checks
+      critChance,
+      critMult,
       sourceKey: this.baseConfig?.key
     };
   }

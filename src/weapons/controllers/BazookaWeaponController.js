@@ -208,7 +208,8 @@ export class BazookaWeaponController extends WeaponControllerBase {
       baseDamage: payload.damage,
       cfg: aoeCfg,
       damagePipeline: this.damagePipeline,
-      sourceKey: this.baseConfig?.key
+      sourceKey: this.baseConfig?.key,
+      payload
     });
 
     // Begin spawning explosion visuals / AoE pulses.

@@ -172,7 +172,8 @@ export class SlashWeaponController extends WeaponControllerBase {
           baseDamage: payload.damage,
           cfg: runConfig,
           damagePipeline: this.damagePipeline,
-          sourceKey: this.baseConfig?.key
+          sourceKey: this.baseConfig?.key,
+          payload
         });
       },
       defaultFrameIndex: triggerFrameIndex
