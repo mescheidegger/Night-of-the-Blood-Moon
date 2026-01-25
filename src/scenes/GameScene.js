@@ -31,11 +31,15 @@ import { PassiveRegistry } from '../passives/PassiveRegistry.js';
 import { DamageNumberSystem } from '../combat/DamageNumberSystem.js';
 import { getOrCreateSoundManager } from '../audio/SoundManager.js';
 import { setupAudioSystem } from '../audio/AudioSystem.js';
-import { PauseMenu } from '../ui/PauseMenu.js';
-import { SettingsMenu } from '../ui/SettingsMenu.js';
 import { DEV_RUN } from '../config/gameConfig.js';
-import { WerewolfBossController } from '../mob/boss/WerewolfBossController.js';
 import { WerewolfEncounter } from '../encounters/WerewolfEncounter.js';
+import { resetRunState } from './game/resetRunState.js';
+import { PauseController } from './game/PauseController.js';
+import { wireGameSceneEvents } from './game/wireEvents.js';
+import { cleanupGameScene } from './game/cleanup.js';
+import { applyDevRun } from './game/applyDevRun.js';
+import { updateArenaLock } from './game/arenaLock.js';
+import { stepSimulation } from './game/stepSimulation.js';
 
 /**
  * Main gameplay scene.
@@ -63,29 +67,11 @@ export class GameScene extends Phaser.Scene {
     // Reset transient run state before we instantiate any subsystems. Keeping
     // these flags centralised helps the helper classes observe the canonical
     // source of truth for player status and run timing.
-    this.time.timeScale = 1;
-    this.playerInputDisabled = false;
-    this.playerCombatDisabled = false;
-    this.endRunMenu = null;
-    this.pauseMenu = null;
-    this.settingsMenu = null;
-    this.playerXP = 0;
-    this._runStartedAt = null;
-    this._totalPausedMs = 0;
-    this._pausedAt = null;
-    this.isGameOver = false;
-    this._pauseSnapshot = null;
-    this._pauseSources = new Set();
-    this.isSimulationPaused = false;
-    this.legionFormations = new Map();
-    this._nextLegionId = 0;
-    this._isShuttingDown = false;
-    this._finale = null;
-    this._arenaLocked = false;
-    this._bossControllers = new Set();
+    resetRunState(this);
 
     // Compose the scene via small focused helpers. Each method sets up a
     // specific slice of responsibility so future changes have a clear home.
+    this.pause = new PauseController(this);
     this._setupWorld();
     this._setupHero();
     this._setupSystems();
@@ -98,8 +84,9 @@ export class GameScene extends Phaser.Scene {
       deathSfx: null, // add later when you have it
       defaultLeadInMs: 2500,
     });
-    this._wireEvents();
-    this._applyDevOverrides();
+    this._disposeEvents = wireGameSceneEvents(this);
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => cleanupGameScene(this));
+    applyDevRun(this, DEV_RUN);
   }
 
   /** Handle _setupWorld so this system stays coordinated. */
@@ -162,8 +149,8 @@ export class GameScene extends Phaser.Scene {
     this.playerDeathController = this.hero.deathController;
 
     // Smooth camera follow keeps the hero centred while still feeling weighty.
-    //this.cameras.main.startFollow(this.hero.sprite, true, 0.12, 0.12);
-    this.cameras.main.startFollow(this.hero.sprite, true, 1, 1);
+    this.cameras.main.startFollow(this.hero.sprite, true, 0.12, 0.12);
+    //this.cameras.main.startFollow(this.hero.sprite, true, 1, 1);
 
 
     // Input bindings are still configured here so the controller remains a
@@ -325,156 +312,6 @@ export class GameScene extends Phaser.Scene {
     setupAudioSystem(this, this.soundManager);
   }
 
-  /** Handle _wireEvents so this system stays coordinated. */
-  _wireEvents() {
-    // Debug keys remain scene-owned so they stay easy to remove later.
-    this.debugWeaponKeys = this.input.keyboard.addKeys({
-      addBolt: Phaser.Input.Keyboard.KeyCodes.ONE,
-      removeBolt: Phaser.Input.Keyboard.KeyCodes.TWO,
-      buffBolt: Phaser.Input.Keyboard.KeyCodes.THREE
-    });
-
-    // Cache the bound handler so we can remove it from events during shutdown.
-    this._onPlayerDeathFinished = () => this.handlePlayerDeathFinished();
-    this.events.on('player:death:finished', this._onPlayerDeathFinished);
-    this._onSpawnControl = (payload) => this._handleSpawnControl(payload);
-    this.events.on('spawn:control', this._onSpawnControl);
-    this._onEnemySpawned = ({ enemy } = {}) => {
-      if (!enemy || enemy.mobKey !== 'werewolf_boss') return;
-      if (enemy._bossController) return;
-
-      const controller = new WerewolfBossController(this, enemy);
-      enemy._bossController = controller;
-      this._bossControllers.add(controller);
-    };
-    this.events.on('enemy:spawned', this._onEnemySpawned);
-    this._onEnemyReleased = ({ enemy } = {}) => {
-      const controller = enemy?._bossController;
-      if (!controller) return;
-
-      controller.destroy();
-      this._bossControllers.delete(controller);
-      enemy._bossController = null;
-    };
-    this.events.on('enemy:released', this._onEnemyReleased);
-
-    // 🔑 Pause key handling (Esc / P)
-    this._onPauseKey = (event) => {
-      const toggled = this.togglePauseMenu();
-      if (toggled) {
-        event?.stopPropagation?.();
-        event?.preventDefault?.();
-      }
-    };
-
-    this.input.keyboard.on('keydown-ESC', this._onPauseKey);
-    this.input.keyboard.on('keydown-P', this._onPauseKey);
-
-    // Ensure helper classes tear themselves down gracefully when the scene
-    // shuts down. Keeping the cleanup in one place prevents dangling listeners.
-    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
-      this._isShuttingDown = true;
-      const dn = this.damageNumbers;
-      this.damageNumbers = null;
-      dn?.destroy?.();
-      this.events.off('player:death:finished', this._onPlayerDeathFinished);
-      this.events.off('spawn:control', this._onSpawnControl);
-      this.events.off('enemy:spawned', this._onEnemySpawned);
-      this.events.off('enemy:released', this._onEnemyReleased);
-      this.events.off('enemy:died', this._onEnemyDied);
-      this.derivedStats?.destroy?.();
-      this.derivedStats = null;
-      this.levelFlow?.destroy?.();
-      this.pickups?.destroy?.();
-      this.enemyAI?.destroy?.();
-      this._bossControllers?.forEach?.((controller) => controller.destroy());
-      this._bossControllers?.clear?.();
-      this.werewolfEncounter?.destroy?.();
-      this.werewolfEncounter = null;
-
-      //this.enemyProjectiles?.destroy?.(); - updated to be destroyed in system file
-      this.hud?.destroy?.();
-      this.groundLayer?.destroy?.();
-      this.bloodMoon?.destroy?.();
-      this.endRunMenu?.destroy();
-      this.endRunMenu = null;
-      this.pauseMenu?.destroy?.();
-      this.pauseMenu = null;
-      this.settingsMenu?.destroy?.();
-      this.settingsMenu = null;
-      this.hero?.destroy?.();
-      this.weaponManager?.destroy?.();
-      this.passiveManager?.destroy?.();
-
-      this.input.keyboard?.off('keydown-ESC', this._onPauseKey);
-      this.input.keyboard?.off('keydown-P', this._onPauseKey);
-    });
-  }
-
-  /** Handle _applyDevOverrides so this system stays coordinated. */
-  _applyDevOverrides() {
-    const cfg = DEV_RUN ?? {};
-    if (!cfg.enabled) return;
-    this.add.text(16, 48, 'DEV_RUN ACTIVE', {
-      font: '14px monospace',
-      color: '#ff4d4d'
-    }).setScrollFactor(0).setDepth(9999);
-
-
-    const startSeconds = Math.max(0, Number(cfg.startElapsedSeconds) || 0);
-    const now = this.time?.now ?? 0;
-
-    // Fast-forward the run clock
-    this._runStartedAt = now - (startSeconds * 1000);
-    this._totalPausedMs = 0;
-    this._pausedAt = null;
-    this.hud?.setStartTime?.(this._runStartedAt);
-    this.spawnDirector?.seekToTime?.(startSeconds);
-
-    // Apply starting level without triggering modals
-    if ((cfg.startLevel ?? 0) > 0) {
-      this.levelFlow?.debugSetLevel?.(cfg.startLevel, { snapToFloor: !!cfg.snapXPToLevelFloor });
-    }
-
-    // Replace weapon loadout deterministically (respecting whitelist)
-    if (Array.isArray(cfg.weapons)) {
-      const whitelist = Array.isArray(this.weaponWhitelist)
-        ? this.weaponWhitelist
-        : Array.from(this.weaponWhitelist ?? []);
-      const normalizedWeapons = [];
-
-      cfg.weapons.forEach((entry) => {
-        if (!entry) return;
-        const isObj = typeof entry === 'object';
-        const key = isObj ? entry.key : entry;
-        if (!key || (whitelist.length > 0 && !whitelist.includes(key))) return;
-
-        const levelRaw = isObj ? entry.level : undefined;
-        const fallbackLevel = Number(cfg.weaponLevelDefault);
-        const effectiveLevel = Number.isFinite(levelRaw)
-          ? levelRaw
-          : (Number.isFinite(fallbackLevel) ? fallbackLevel : undefined);
-
-        normalizedWeapons.push({ key, level: effectiveLevel });
-      });
-
-      if (normalizedWeapons.length > 0) {
-        this.weaponManager?.setLoadout?.([]);
-        normalizedWeapons.forEach(({ key, level }) => {
-          const opts = {};
-          if (Number.isFinite(level)) {
-            opts.level = level;
-          }
-          this.weaponManager?.grantWeapon?.(key, opts);
-        });
-      }
-    }
-
-    // Apply passive stacks/loadout
-    if (Array.isArray(cfg.passives)) {
-      this.passiveManager?.setLoadout?.(cfg.passives);
-    }
-  }
 
   /** Handle _handleSpawnControl so this system stays coordinated. */
   _handleSpawnControl(payload) {
@@ -548,310 +385,28 @@ export class GameScene extends Phaser.Scene {
     this.endRun('loss', { reason: 'playerDied' });
   }
 
-  _getHeroIdleAnimKey() {
-    const heroEntry = this.heroEntry ?? null;
-    const heroKey = this.hero?.key ?? heroEntry?.key ?? null;
-    const prefix = heroEntry?.animationPrefix ?? heroKey ?? heroEntry?.key ?? 'hero';
-    const dir = this.playerFacing ?? heroEntry?.defaultFacing ?? 'down';
-
-    // Common NOTBM keys: `${prefix}:idle-${dir}`
-    const preferred = `${prefix}:idle-${dir}`;
-    if (this.anims?.exists?.(preferred)) return preferred;
-
-    // Graceful fallback
-    const fallback = `${prefix}:idle-down`;
-    if (this.anims?.exists?.(fallback)) return fallback;
-
-    return null;
-  }
-
-
-  /** Handle _acquireSimulationPause so this system stays coordinated. */
   _acquireSimulationPause(source = 'unknown') {
-    if (this._pauseSources.has(source)) return;
-
-    const wasEmpty = this._pauseSources.size === 0;
-    this._pauseSources.add(source);
-
-    if (!wasEmpty) {
-      // someone already has the world paused; nothing else to do
-      return;
-    }
-
-    // ------------------------------------------------------------------
-    // Pause modes
-    // ------------------------------------------------------------------
-    // pauseMenu: hard-pause time + physics (true pause)
-    // levelup:   pause time (update loop early-outs), physics may keep stepping,
-    //            so freeze bodies manually
-    // bossDeath: keep time running (so boss death anim/tweens/delayedCall work),
-    //            but pause physics + freeze bodies so nothing drifts
-    const pausePhysics = (source === 'pauseMenu' || source === 'bossDeath');
-    const freezeBodies = (source === 'levelup' || source === 'bossDeath');
-    const pauseTime = (source === 'pauseMenu' || source === 'levelup'); // NOT bossDeath
-
-    // NEW: for bossDeath + pauseMenu, pause hero animation so we don’t “run in place”
-    const pauseHeroAnim = (source === 'pauseMenu' || source === 'bossDeath');
-
-    const heroSprite = this.hero?.sprite ?? null;
-    const heroBody = heroSprite?.body ?? null;
-
-    const heroWasAnimPlaying = !!heroSprite?.anims?.isPlaying;
-    const heroAnimKey = heroSprite?.anims?.currentAnim?.key ?? null;
-    const heroAnimProgress = heroSprite?.anims?.getProgress?.() ?? 0;
-
-    this._pauseSnapshot = {
-      source,
-      timeScale: this.time?.timeScale ?? 1,
-      physicsTimeScale: this.physics?.world?.timeScale ?? 1,
-      pausedPhysics: pausePhysics,
-
-      freezeBodies,
-      heroBodyWasEnabled: heroBody ? !!heroBody.enable : undefined,
-
-      // NEW: animation snapshot for hero
-      heroAnim: {
-        pauseHeroAnim,
-        wasPlaying: heroWasAnimPlaying,
-        key: heroAnimKey,
-        progress: heroAnimProgress,
-        timeScale: heroSprite?.anims?.timeScale ?? 1,
-      },
-
-      frozenEnemyBodies: [],
-    };
-
-  this._pausedAt = this.time?.now ?? 0;
-
-  // Pause timers/tweens that respect TimeScale; GameScene.update() also early-outs.
-  if (pauseTime) {
-    this.time.timeScale = 0;
+    this.pause?.acquire?.(source);
   }
 
-  // Hard-pause physics for pause menu AND bossDeath cinematic.
-  if (pausePhysics && this.physics?.world) {
-    this.physics.world.timeScale = 0;
-    this.physics.world.pause();
-  }
-
-  this.playerInputDisabled = true;
-  this.playerCombatDisabled = true;
-  this.isSimulationPaused = true;
-
-  // Stop hero movement immediately.
-  if (heroBody) {
-    heroBody.setVelocity?.(0, 0);
-    heroBody.setAcceleration?.(0, 0);
-  }
-
-  // Pause hero animation for bossDeath/pauseMenu so we don’t “run in place”
-  if (pauseHeroAnim && heroSprite?.anims) {
-    heroSprite.anims.stop();
-
-    const idleKey = this._getHeroIdleAnimKey?.();
-    if (idleKey) {
-      heroSprite.play(idleKey, true);
-      heroSprite.anims.timeScale = 1;
-    }
-  }
-
-  // Freeze bodies when needed (level-up and boss-death cinematic).
-  if (freezeBodies) {
-    if (heroBody) {
-      // Disable body so Arcade won't integrate/collide it during the pause window.
-      heroBody.enable = false;
-    }
-
-    const group = this.enemyPools?.getAllGroup?.();
-    group?.children?.iterate?.((enemy) => {
-      if (!enemy?.active) return;
-
-      // IMPORTANT: during bossDeath, do NOT fully freeze/disable the boss body here.
-      // The encounter already stops its motion and wants its anim/FX to complete.
-      if (source === 'bossDeath' && (enemy.mobKey === 'werewolf_boss' || enemy._deathSequenceLock)) {
-        enemy.body?.setVelocity?.(0, 0);
-        enemy.body?.setAcceleration?.(0, 0);
-        return;
-      }
-
-      const body = enemy?.body;
-      if (!body) return;
-
-      body.setVelocity?.(0, 0);
-      body.setAcceleration?.(0, 0);
-
-      body.enable = false;
-      this._pauseSnapshot.frozenEnemyBodies.push(enemy);
-    });
-  } else {
-    // Non-freeze pause: just stop any currently moving enemies (active only).
-    this.enemyPools?.getAllGroup?.()?.children?.iterate?.((enemy) => {
-      if (!enemy?.active) return;
-      enemy?.body?.setVelocity?.(0, 0);
-      enemy?.body?.setAcceleration?.(0, 0);
-    });
-  }
-}
-
-  /** Handle _releaseSimulationPause so this system stays coordinated. */
   _releaseSimulationPause(source = 'unknown') {
-    if (!this._pauseSources.has(source)) return;
-
-    this._pauseSources.delete(source);
-    if (this._pauseSources.size > 0) {
-      // another system still owns the pause
-      return;
-    }
-
-    const now = this.time?.now ?? 0;
-    if (this._pausedAt != null) {
-      const pausedMs = Math.max(0, now - this._pausedAt);
-      this._totalPausedMs += pausedMs;
-      this._pausedAt = null;
-    }
-
-    const snap = this._pauseSnapshot ?? {};
-    this.time.timeScale = snap.timeScale ?? 1;
-
-    if (snap.pausedPhysics && this.physics?.world) {
-      this.physics.world.timeScale = snap.physicsTimeScale ?? 1;
-      this.physics.world.resume();
-    }
-
-    // If we froze bodies (level-up or bossDeath), re-enable them now.
-    if (snap.freezeBodies) {
-      const heroSprite = this.hero?.sprite ?? null;
-      const heroBody = heroSprite?.body ?? null;
-
-      if (heroBody) {
-        heroBody.enable = snap.heroBodyWasEnabled ?? true;
-        heroBody.setVelocity?.(0, 0);
-        heroBody.setAcceleration?.(0, 0);
-      }
-
-      const frozen = snap.frozenEnemyBodies;
-      if (Array.isArray(frozen)) {
-        frozen.forEach((enemy) => {
-          const body = enemy?.body;
-          if (!body) return;
-          body.enable = true;
-          body.setVelocity?.(0, 0);
-          body.setAcceleration?.(0, 0);
-        });
-      }
-    }
-
-    // NEW: resume hero animation if we paused it
-    const heroSprite = this.hero?.sprite ?? null;
-    const heroAnimSnap = snap.heroAnim ?? null;
-    if (heroAnimSnap?.pauseHeroAnim && heroSprite?.anims) {
-      // If you want to restore precisely:
-      // - resume only if it was playing before
-      // - restart the same anim at similar progress
-      if (heroAnimSnap.wasPlaying && heroAnimSnap.key && this.anims?.exists?.(heroAnimSnap.key)) {
-        heroSprite.play(heroAnimSnap.key, true);
-        // Try to restore progress roughly (Phaser supports setProgress on AnimationState in recent versions)
-        heroSprite.anims.setProgress?.(heroAnimSnap.progress ?? 0);
-      } else {
-        heroSprite.anims.stop();
-      }
-      heroSprite.anims.timeScale = heroAnimSnap.timeScale ?? 1;
-    }
-
-    this.playerInputDisabled = false;
-    this.playerCombatDisabled = false;
-    this._pauseSnapshot = null;
-    this.isSimulationPaused = false;
+    this.pause?.release?.(source);
   }
 
-  /** Handle _markRunStarted so this system stays coordinated. */
   _markRunStarted() {
-    if (this._runStartedAt != null) return; // already set
-
-    const now = this.time?.now ?? 0;
-    this._runStartedAt = now;
-    this._totalPausedMs = 0;
-    this._pausedAt = null;
-
-    // Inform HUD so the on-screen timer uses the same timestamp.
-    this.hud?.setStartTime?.(now);
+    this.pause?.markRunStarted?.();
   }
 
-  /** Handle getRunElapsedMs so this system stays coordinated. */
   getRunElapsedMs() {
-    if (!Number.isFinite(this._runStartedAt)) return 0;
-
-    const now = this.time?.now ?? 0;
-    const inFlightPaused = this._pausedAt != null
-      ? Math.max(0, now - this._pausedAt)
-      : 0;
-    const totalPaused = this._totalPausedMs + inFlightPaused;
-
-    return Math.max(0, now - this._runStartedAt - totalPaused);
+    return this.pause?.getRunElapsedMs?.() ?? 0;
   }
 
-  /** Handle getRunElapsedSeconds so this system stays coordinated. */
   getRunElapsedSeconds() {
-    return this.getRunElapsedMs() / 1000;
+    return this.pause?.getRunElapsedSeconds?.() ?? 0;
   }
 
-  /** Handle togglePauseMenu so this system stays coordinated. */
   togglePauseMenu() {
-    if (this._isShuttingDown) return false;
-    if (this.isGameOver) return false;
-    if (this.levelFlow?._modalActive) return false;
-    if (this.settingsMenu) return false;
-
-    this._togglePauseMenu();
-    return true;
-  }
-
-  /** Handle _togglePauseMenu so this system stays coordinated. */
-  _togglePauseMenu() {
-    if (this.pauseMenu) {
-      this._closePauseMenu();
-    } else {
-      this._openPauseMenu();
-    }
-  }
-
-  /** Handle _openPauseMenu so this system stays coordinated. */
-  _openPauseMenu() {
-    if (this.pauseMenu) return;
-
-    this._acquireSimulationPause('pauseMenu');
-
-    this.pauseMenu = new PauseMenu(this, {
-      onResume: () => this._closePauseMenu(),
-      onMainMenu: () => {
-        this._closePauseMenu();
-        this.time.timeScale = 1;
-        this.scene.start('menu');
-      },
-      onSettings: () => this._openSettingsFromPause()
-    });
-  }
-
-  /** Handle _closePauseMenu so this system stays coordinated. */
-  _closePauseMenu() {
-    if (!this.pauseMenu) return;
-
-    this.pauseMenu.destroy();
-    this.pauseMenu = null;
-    this._releaseSimulationPause('pauseMenu');
-  }
-
-  /** Handle _openSettingsFromPause so this system stays coordinated. */
-  _openSettingsFromPause() {
-    if (this.settingsMenu) return;
-
-    this.settingsMenu = new SettingsMenu(this, {
-      soundManager: this.soundManager,
-      onClose: () => {
-        this.settingsMenu?.destroy();
-        this.settingsMenu = null;
-      }
-    });
+    return this.pause?.toggleMenu?.() ?? false;
   }
 
   /** Handle update so this system stays coordinated. */
@@ -861,44 +416,10 @@ export class GameScene extends Phaser.Scene {
       return;
     }
 
-    if (this._finale && !this._arenaLocked && (this.time?.now ?? 0) >= this._finale.lockAtMs) {
-      const heroSprite = this.hero?.sprite;
-      const body = heroSprite?.body;
-
-      if (heroSprite && body) {
-        const cam = this.cameras.main;
-
-        // Current visible rectangle in world coords
-        const view = cam.worldView; // { x, y, width, height }
-
-        // Use the visible region as the arena bounds
-        const x = view.x;
-        const y = view.y;
-        const arenaWidth = view.width;
-        const arenaHeight = view.height;
-
-        cam.setBounds(x, y, arenaWidth, arenaHeight);
-        this.physics.world.setBounds(x, y, arenaWidth, arenaHeight);
-
-        const heroSprite = this.hero?.sprite;
-        const body = heroSprite?.body;
-        if (heroSprite && body) {
-          body.setCollideWorldBounds(true);
-          body.setBounce(0, 0);
-
-          // Ensure hero is inside bounds (defensive)
-          heroSprite.x = Phaser.Math.Clamp(heroSprite.x, x, x + arenaWidth);
-          heroSprite.y = Phaser.Math.Clamp(heroSprite.y, y, y + arenaHeight);
-          body.reset(heroSprite.x, heroSprite.y);
-        }
-
-        this._arenaLocked = true;
-      }
-    }
-
+    updateArenaLock(this);
 
     // 🔑 Shared pause (level-up, pause menu, etc.)
-    if (this.isSimulationPaused) {
+    if (this.pause?.isPaused?.()) {
       return;
     }
 
@@ -909,30 +430,6 @@ export class GameScene extends Phaser.Scene {
       this._markRunStarted();
     }
 
-    this.hero?.controller?.update?.(dt);
-    this.weaponManager?.update?.(dt);
-
-    if (this.debugWeaponKeys) {
-      if (Phaser.Input.Keyboard.JustDown(this.debugWeaponKeys.addBolt)) {
-        this.weaponManager?.addWeapon('bolt');
-      }
-      if (Phaser.Input.Keyboard.JustDown(this.debugWeaponKeys.removeBolt)) {
-        this.weaponManager?.removeWeapon('bolt');
-      }
-      if (Phaser.Input.Keyboard.JustDown(this.debugWeaponKeys.buffBolt)) {
-        this.weaponManager?.setModifiersForWeapon('bolt', [
-          { type: 'delayMs%', value: -0.1 }
-        ]);
-      }
-    }
-
-    this.props?.update?.();
-    this.pickups?.update?.(dt);
-    this.enemyAI?.update?.(dt);
-    this.enemyProjectiles?.update?.(dt);
-    this.spawnDirector?.update?.(dt);
-    this.groundLayer?.update?.();
-    this.bloodMoon?.update?.(dt);
-    this.hud?.update?.();
+    stepSimulation(this, dt);
   }
 }
