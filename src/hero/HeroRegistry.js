@@ -135,10 +135,10 @@ const HEROES = {
     defaultFacing: 'right',
     progression: {
       3: ['bow'],
-      7: ['magicpotion'],
-      12: ['daggerthrow'],
-      18: ['smite'],
-      24: ['holyhammer']
+      8: ['magicpotion'],
+      15: ['daggerthrow'],
+      22: ['smite'],
+      28: ['holyhammer']
     },
     weapons: {
       allowed: [
@@ -227,10 +227,10 @@ const HEROES = {
     defaultFacing: 'right',
     progression: {
       3: ['vikinghammer'],
-      7: ['icebow'],
-      12: ['whirlwind'],
-      18: ['lightning'],
-      24: ['ragnarok']
+      8: ['icebow'],
+      15: ['whirlwind'],
+      22: ['lightning'],
+      28: ['ragnarok']
     },
     weapons: {
       allowed: [
@@ -299,7 +299,7 @@ const HEROES = {
       speed: 110,
       maxVelocity: 160,
       maxHealth: 175,
-      iframeMs: 150,
+      iframeMs: 200,
       drag: 0,
       damping: false
     },
@@ -319,10 +319,10 @@ const HEROES = {
     defaultFacing: 'right',
     progression: {
       3: ['flamethrower'],
-      7: ['bazooka'],
-      12: ['ak47'],
-      18: ['uavstrike'],
-      24: ['deathray']
+      8: ['bazooka'],
+      15: ['ak47'],
+      22: ['uavstrike'],
+      28: ['deathray']
     },
     weapons: {
       allowed: [
@@ -411,10 +411,10 @@ const HEROES = {
     defaultFacing: 'right',
     progression: {
       3: ['piercingstar'],
-      7: ['bow'],
-      12: ['venusrevenge'],
-      18: ['deathskiss'],
-      24: ['clusterpotion']
+      8: ['bow'],
+      15: ['venusrevenge'],
+      22: ['deathskiss'],
+      28: ['clusterpotion']
     },
     weapons: {
       allowed: [
@@ -483,7 +483,7 @@ const HEROES = {
       speed: 115,
       maxVelocity: 165,
       maxHealth: 150,
-      iframeMs: 300,
+      iframeMs: 200,
       drag: 0,
       damping: false
     },
@@ -503,10 +503,10 @@ const HEROES = {
     defaultFacing: 'right',
     progression: {
       3: ['windsummon'],
-      7: ['xbow'],
-      12: ['spearthrow'],
-      18: ['spearcross'],
-      24: ['greenfire']
+      8: ['xbow'],
+      15: ['spearthrow'],
+      22: ['spearcross'],
+      28: ['greenfire']
     },
     weapons: {
       allowed: [
@@ -570,7 +570,7 @@ const HEROES = {
       speed: 115,
       maxVelocity: 165,
       maxHealth: 150,
-      iframeMs: 300,
+      iframeMs: 200,
       drag: 0,
       damping: false
     },
@@ -590,10 +590,10 @@ const HEROES = {
     defaultFacing: 'right',
     progression: {
       3: ['fireblast'],
-      7: ['vanquish'],
-      12: ['sparkcross'],
-      18: ['chainlightning'],
-      24: ['lifeeraser']
+      8: ['lifeeraser'],
+      15: ['vanquish'],
+      22: ['chainlightning'],
+      28: ['sparkcross']
     },
     weapons: {
       allowed: [
@@ -661,7 +661,7 @@ const HEROES = {
       speed: 115,
       maxVelocity: 160,
       maxHealth: 150,
-      iframeMs: 300,
+      iframeMs: 200,
       drag: 0,
       damping: false
     },
