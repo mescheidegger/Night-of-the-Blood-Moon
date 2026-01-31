@@ -71,7 +71,7 @@ export const MapRegistry = {
         Walls: false,
         Props: false,
         Plants: false,
-        Collusion: true,
+        Collision: true,
       },
       objectLayerRules: {
         InvisibleWalls: true,
