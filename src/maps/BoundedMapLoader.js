@@ -16,22 +16,28 @@ export class BoundedMapLoader {
         objectLayersByName: {},
         collisionLayers: [],
         objectColliderGroup: null,
+        obstacleRects: [],
       };
     }
 
     // Build the Phaser tilemap so the runtime can derive world bounds and colliders.
     const map = this.scene.make.tilemap({ key: tilemapConfig.jsonKey });
+
     const tilesets = (tilemapConfig.tilesets ?? [])
       .map((tileset) => {
         const name = tileset?.name ?? tileset?.key;
-        if (!name || !tileset?.key) return null;
-        return map.addTilesetImage(name, tileset.key);
+        const key = tileset?.key;
+        if (!name || !key) return null;
+
+        // Phaser returns null if it can't find the image key or the tileset name doesn't match.
+        return map.addTilesetImage(name, key);
       })
       .filter(Boolean);
 
     const layersByName = {};
     const objectLayersByName = {};
     const collisionLayers = [];
+
     const collisionConfig = this.mapConfig.collision ?? {};
     const tileLayerRules = collisionConfig.tileLayerRules ?? {};
     const objectLayerRules = collisionConfig.objectLayerRules ?? {};
@@ -40,15 +46,21 @@ export class BoundedMapLoader {
     (map.layers ?? []).forEach((layerData, index) => {
       if (!layerData) return;
       if (layerData.type && layerData.type !== 'tilelayer') return;
-      const layer = map.createLayer(layerData.name, tilesets, 0, 0);
-      if (!layer) return;
-      layer.setDepth(index);
-      layersByName[layerData.name] = layer;
 
-      if (tileLayerRules[layerData.name]) {
+      const layerName = layerData.name;
+      if (!layerName) return;
+
+      const layer = map.createLayer(layerName, tilesets, 0, 0);
+      if (!layer) return;
+
+      layer.setDepth(index);
+      layersByName[layerName] = layer;
+
+      if (tileLayerRules[layerName]) {
         layer.setCollisionByExclusion([-1]);
         collisionLayers.push(layer);
       } else {
+        // ensure collisions are disabled on non-collision layers
         layer.setCollisionByExclusion([-1], false);
       }
     });
@@ -59,13 +71,11 @@ export class BoundedMapLoader {
       objectLayersByName[layerData.name] = layerData;
     });
 
-    console.log('[BoundedMapLoader] object layer names found:', Object.keys(objectLayersByName));
-    console.log('[BoundedMapLoader] objectLayerRules keys:', Object.keys(objectLayerRules ?? {}));
-
     // Build static physics bodies from object layers for bounded maps.
-    const objectColliderGroup = this._buildObjectColliders(objectLayersByName, objectLayerRules);
-    const colliderCount = objectColliderGroup?.getChildren?.()?.length ?? 0;
-    console.log('[BoundedMapLoader] object collider group count:', colliderCount);
+    const { group: objectColliderGroup, obstacleRects } = this._buildObjectColliders(
+      objectLayersByName,
+      objectLayerRules
+    );
 
     return {
       map,
@@ -73,39 +83,62 @@ export class BoundedMapLoader {
       objectLayersByName,
       collisionLayers,
       objectColliderGroup,
+      obstacleRects,
     };
   }
 
   _buildObjectColliders(objectLayersByName, objectLayerRules) {
+    const obstacleRects = [];
+
     // Only layers opted-in by rules are converted into physics rectangles.
     const eligibleLayerNames = Object.keys(objectLayersByName).filter(
       (name) => objectLayerRules?.[name]
     );
-    console.log('[BoundedMapLoader] eligible object layers:', eligibleLayerNames);
-    if (!eligibleLayerNames.length) return null;
 
-    // Static group keeps object colliders fixed to the tiled map geometry.
-    const group = this.scene.physics.add.staticGroup();
+    if (!eligibleLayerNames.length) {
+      return { group: null, obstacleRects };
+    }
+
+    const physics = this.scene?.physics;
+    const canMakeBodies = Boolean(physics?.add?.staticGroup && physics?.add?.existing);
+
+    // If physics isn't available, still return obstacleRects so pathing can work,
+    // but skip creating Arcade bodies.
+    const group = canMakeBodies ? physics.add.staticGroup() : null;
+
     eligibleLayerNames.forEach((layerName) => {
       const layerData = objectLayersByName[layerName];
-      console.log('[BoundedMapLoader] building object colliders for', layerName, 'count=', layerData?.objects?.length);
-      if (!layerData?.objects?.length) return;
-      layerData.objects.forEach((obj) => {
-        if (!obj || typeof obj.x !== 'number' || typeof obj.y !== 'number') return;
-        if (typeof obj.width !== 'number' || typeof obj.height !== 'number') return;
-        const rect = this.scene.add.rectangle(
-          obj.x + obj.width / 2,
-          obj.y + obj.height / 2,
-          obj.width,
-          obj.height,
-          0xff0000,
-          0
-        );
-        this.scene.physics.add.existing(rect, true);
+      const objects = layerData?.objects ?? [];
+      if (!objects.length) return;
+
+      objects.forEach((obj) => {
+        if (!obj) return;
+
+        // Tiled uses top-left (x,y) for rectangles.
+        const x = Number(obj.x);
+        const y = Number(obj.y);
+        const w = Number(obj.width);
+        const h = Number(obj.height);
+
+        if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(w) || !Number.isFinite(h)) return;
+        if (w <= 0.5 || h <= 0.5) return; // skip degenerate rectangles
+
+        // Record for pathing (stamp these into walkable grid).
+        obstacleRects.push({ x, y, w, h, layerName, id: obj.id });
+
+        // Build a static physics rect for Arcade collisions (if enabled).
+        if (!canMakeBodies) return;
+
+        // Rectangle is centered; object coords are top-left.
+        const rect = this.scene.add
+          .rectangle(x + w / 2, y + h / 2, w, h, 0xff0000, 0)
+          .setOrigin(0.5);
+
+        physics.add.existing(rect, true);
         group.add(rect);
       });
     });
 
-    return group;
+    return { group, obstacleRects };
   }
 }
