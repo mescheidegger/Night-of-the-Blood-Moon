@@ -87,6 +87,178 @@ function releaseIfOffscreen(enemy, scene, margin = 64) {
  */
 export const ENEMY_BEHAVIORS = {
 
+    seekPlayerBoundedFlow: (enemy, player, scene, dt = 0) => {
+    const nav = scene?.navGrid;
+    const flow = scene?.flowField;
+
+    if (!nav || !flow || !scene?.mapRuntime?.isBounded?.()) {
+      return ENEMY_BEHAVIORS.seekPlayer(enemy, player, scene, dt);
+    }
+
+    const speed = enemy.speed || 60;
+
+    // ---------------------------------------
+    // Helpers (kept inside for easy copy/paste)
+    // ---------------------------------------
+    const isClearLineOfSightTiles = (navGrid, x0, y0, x1, y1) => {
+      // Tile-space line walk. If any tile along the segment is blocked => no LOS.
+      // This is conservative (good): it prevents "cheating" through corners.
+      let dx = Math.abs(x1 - x0);
+      let dy = Math.abs(y1 - y0);
+      let sx = x0 < x1 ? 1 : -1;
+      let sy = y0 < y1 ? 1 : -1;
+      let err = dx - dy;
+
+      let x = x0;
+      let y = y0;
+
+      // Check start tile too (in case we end up in blocked due to body overlap)
+      if (!navGrid.inBounds(x, y) || !navGrid.isWalkable(x, y)) return false;
+
+      while (!(x === x1 && y === y1)) {
+        const e2 = err * 2;
+
+        if (e2 > -dy) { err -= dy; x += sx; }
+        if (e2 <  dx) { err += dx; y += sy; }
+
+        if (!navGrid.inBounds(x, y) || !navGrid.isWalkable(x, y)) return false;
+      }
+
+      return true;
+    };
+
+    // ----------------------------
+    // Tile positions
+    // ----------------------------
+    const eTile = nav.worldToTile(enemy.x, enemy.y);
+    const pTile = nav.worldToTile(player.x, player.y);
+
+    if (!nav.inBounds(eTile.tx, eTile.ty)) {
+      enemy.setVelocity(0, 0);
+      return;
+    }
+
+    // ----------------------------
+    // LOS cache (so 500 mobs is ok)
+    // ----------------------------
+    const now = scene?.time?.now ?? 0;
+    const losState = enemy._ffLos ?? (enemy._ffLos = { nextAt: 0, clear: false, lastPTx: null, lastPTy: null });
+
+    // Recompute LOS ~4x/sec per enemy, and also when player changes tiles.
+    if (now >= losState.nextAt || losState.lastPTx !== pTile.tx || losState.lastPTy !== pTile.ty) {
+      losState.nextAt = now + 250 + (enemy._ffLosJitter ?? (enemy._ffLosJitter = ((enemy._id ?? 0) * 13) % 120));
+      losState.lastPTx = pTile.tx;
+      losState.lastPTy = pTile.ty;
+
+      losState.clear = isClearLineOfSightTiles(nav, eTile.tx, eTile.ty, pTile.tx, pTile.ty);
+    }
+
+    // If LOS is clear, just do smooth direct seek (no grid stair-step).
+    if (losState.clear) {
+      const dx = player.x - enemy.x;
+      const dy = player.y - enemy.y;
+      const dist = Math.hypot(dx, dy) || 1;
+
+      // Small arrival radius prevents pile-on jitter
+      const STOP_DIST = 18;
+      if (dist <= STOP_DIST) {
+        enemy.setVelocity(0, 0);
+        return;
+      }
+
+      enemy.setVelocity((dx / dist) * speed, (dy / dist) * speed);
+      enemy.setFlipX(dx < 0);
+      return;
+    }
+
+    // ----------------------------
+    // Flow-field steering
+    // ----------------------------
+    const i = nav.idx(eTile.tx, eTile.ty);
+    let d = flow.dir[i];
+
+    // Unreachable: do NOT fall back to direct seek (that reintroduces wall exploit).
+    if (!d) {
+      enemy.setVelocity(0, 0);
+      return;
+    }
+
+    // --- Optional stuck escape (still useful near corners) ---
+    const moved = Math.hypot(enemy.x - (enemy._ffLastX ?? enemy.x), enemy.y - (enemy._ffLastY ?? enemy.y));
+    enemy._ffLastX = enemy.x;
+    enemy._ffLastY = enemy.y;
+
+    if (enemy._ffNextCheckMs == null) enemy._ffNextCheckMs = now + 250;
+    if (enemy._ffStuckScore == null) enemy._ffStuckScore = 0;
+
+    if (now >= enemy._ffNextCheckMs) {
+      enemy._ffNextCheckMs = now + 250;
+
+      if (moved < 2.5) enemy._ffStuckScore += 1;
+      else enemy._ffStuckScore = Math.max(0, enemy._ffStuckScore - 1);
+
+      if (enemy._ffStuckScore >= 2 && flow.dist) {
+        let bestDir = 0;
+        let bestDist = Infinity;
+        const tx = eTile.tx;
+        const ty = eTile.ty;
+
+        if (ty > 0) {
+          const ni = nav.idx(tx, ty - 1);
+          const nd = flow.dist[ni];
+          if (nd >= 0 && nd < bestDist) { bestDist = nd; bestDir = 1; }
+        }
+        if (tx + 1 < nav.w) {
+          const ni = nav.idx(tx + 1, ty);
+          const nd = flow.dist[ni];
+          if (nd >= 0 && nd < bestDist) { bestDist = nd; bestDir = 2; }
+        }
+        if (ty + 1 < nav.h) {
+          const ni = nav.idx(tx, ty + 1);
+          const nd = flow.dist[ni];
+          if (nd >= 0 && nd < bestDist) { bestDist = nd; bestDir = 3; }
+        }
+        if (tx > 0) {
+          const ni = nav.idx(tx - 1, ty);
+          const nd = flow.dist[ni];
+          if (nd >= 0 && nd < bestDist) { bestDist = nd; bestDir = 4; }
+        }
+
+        if (bestDir) {
+          d = bestDir;
+          enemy._ffStuckScore = 0;
+        }
+      }
+    }
+
+    // Move toward CENTER of the next tile in flow direction.
+    let nx = eTile.tx;
+    let ny = eTile.ty;
+    if (d === 1) ny -= 1;
+    else if (d === 2) nx += 1;
+    else if (d === 3) ny += 1;
+    else if (d === 4) nx -= 1;
+
+    if (!nav.inBounds(nx, ny) || !nav.isWalkable(nx, ny)) {
+      enemy.setVelocity(0, 0);
+      return;
+    }
+
+    const target = nav.tileToWorldCenter(nx, ny);
+    const dx = target.x - enemy.x;
+    const dy = target.y - enemy.y;
+    const dist = Math.hypot(dx, dy) || 1;
+
+    const arrive = 6;
+    if (dist < arrive) {
+      enemy.setVelocity(0, 0);
+      return;
+    }
+
+    enemy.setVelocity((dx / dist) * speed, (dy / dist) * speed);
+    enemy.setFlipX(dx < 0);
+  },
+
   /**
    * Direct "seek the player" homing.
    * Very strong behavior (no inertia or smoothing).

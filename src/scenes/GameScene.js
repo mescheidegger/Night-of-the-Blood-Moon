@@ -35,6 +35,8 @@ import { DEV_RUN } from '../config/gameConfig.js';
 import { WerewolfEncounter } from '../encounters/WerewolfEncounter.js';
 import { DEFAULT_MAP_KEY, MapRegistry } from '../maps/MapRegistry.js';
 import { BoundedMapLoader } from '../maps/BoundedMapLoader.js';
+import { BoundedNavGrid } from '../maps/BoundedNavGrid.js';
+import { FlowField } from '../maps/FlowField.js';
 import { MapDebugOverlay } from '../maps/MapDebugOverlay.js';
 import { MapRuntime } from '../maps/MapRuntime.js';
 import { MapQuery } from '../maps/MapQuery.js';
@@ -127,6 +129,13 @@ export class GameScene extends Phaser.Scene {
       this.mapLayers = Object.values(layersByName);
       this.mapCollisionLayers = collisionLayers;
       this.mapObjectColliders = objectColliderGroup;
+      this.navGrid = new BoundedNavGrid(this, {
+        tilemap: this.mapTilemap,
+        collisionLayers: this.mapCollisionLayers,
+        tileSize: 32,
+      });
+
+      this.flowField = new FlowField(this.navGrid);
     } else {
       // Tile the ground texture independently of camera scroll/zoom.
       this.groundLayer = new GroundLayer(this, { ...this.mapConfig.ground, mode: 'infinite' });
