@@ -58,6 +58,7 @@ export function batWave(ctx, mobKey, t, mobEntry = {}) {
   let spawnedCount = 0;
 
   const runtime = scene.mapRuntime;
+  const spawnKey = mobEntry?.spawn?.key ?? mobEntry?.spawn?.group;
   // Bounded maps skip offscreen spawning and instead use bounded spawn points.
   if (runtime?.isBounded?.()) {
     const totalCount = totalGroups * groupSize;
@@ -66,7 +67,12 @@ export function batWave(ctx, mobKey, t, mobEntry = {}) {
       const direction = pickOne(directions) ?? 'L2R';
       const velocityX = direction === 'R2L' ? -speed : direction === 'L2R' ? speed : 0;
       const velocityY = direction === 'T2B' ? speed : direction === 'B2T' ? -speed : 0;
-      const spawnPoint = scene.spawnDirector?.getSpawnPoint?.({ heroSprite, margin: 32, attempts: 12 });
+      const spawnPoint = scene.spawnDirector?.getSpawnPoint?.({
+        heroSprite,
+        margin: 32,
+        attempts: 12,
+        spawnKey,
+      });
       if (!spawnPoint) continue;
       const enemy = pool.get(spawnPoint.x, spawnPoint.y);
       if (!enemy) continue;

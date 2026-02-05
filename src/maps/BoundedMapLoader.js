@@ -6,6 +6,7 @@ export class BoundedMapLoader {
   }
 
   build() {
+    // Return a consistent payload so callers can safely destructure even on failure.
     // Bounded maps rely on a tilemap JSON config that defines layers + tilesets.
     const tilemapConfig = this.mapConfig.tilemap ?? {};
     if (!tilemapConfig.jsonKey) {
@@ -14,6 +15,7 @@ export class BoundedMapLoader {
         map: null,
         layersByName: {},
         objectLayersByName: {},
+        spawnPoints: { all: [], byName: {}, byKey: {}, layerNames: [] },
         collisionLayers: [],
         objectColliderGroup: null,
         obstacleRects: [],
@@ -53,6 +55,7 @@ export class BoundedMapLoader {
       const layer = map.createLayer(layerName, tilesets, 0, 0);
       if (!layer) return;
 
+      // Preserve layer order from Tiled for predictable draw stacking.
       layer.setDepth(index);
       layersByName[layerName] = layer;
 
@@ -77,14 +80,101 @@ export class BoundedMapLoader {
       objectLayerRules
     );
 
+    const spawnPoints = this._extractSpawnPoints(objectLayersByName, this.mapConfig?.spawns);
+
     return {
       map,
       layersByName,
       objectLayersByName,
+      spawnPoints,
       collisionLayers,
       objectColliderGroup,
       obstacleRects,
     };
+  }
+
+  _extractSpawnPoints(objectLayersByName, spawnConfig) {
+    if (!spawnConfig) {
+      return { all: [], byName: {}, byKey: {}, layerNames: [] };
+    }
+
+    const layerNames = Array.isArray(spawnConfig?.layers)
+      ? spawnConfig.layers
+      : (spawnConfig?.layer ? [spawnConfig.layer] : []);
+
+    if (!layerNames.length) {
+      return { all: [], byName: {}, byKey: {}, layerNames: [] };
+    }
+
+    const all = [];
+    const byName = {};
+
+    layerNames.forEach((layerName) => {
+      const layerData = objectLayersByName?.[layerName];
+      if (!layerData) return;
+
+      const points = this._extractPointObjects(layerData, layerName);
+      points.forEach((point) => {
+        all.push(point);
+        if (point.name) {
+          if (!byName[point.name]) {
+            byName[point.name] = [];
+          }
+          byName[point.name].push(point);
+        }
+      });
+    });
+
+    const byKey = {};
+    const keys = spawnConfig?.keys ?? {};
+    Object.entries(keys).forEach(([key, name]) => {
+      if (!name) return;
+      const points = byName[name] ?? [];
+      if (points.length) {
+        byKey[key] = points;
+      }
+    });
+
+    const groups = spawnConfig?.groups ?? {};
+    Object.entries(groups).forEach(([key, group]) => {
+      const name = group?.key ?? group?.name;
+      if (!name) return;
+      const points = byName[name] ?? [];
+      if (points.length) {
+        byKey[key] = points;
+      }
+    });
+
+    return {
+      all,
+      byName,
+      byKey,
+      layerNames,
+    };
+  }
+
+  _extractPointObjects(layerData, layerName) {
+    const objects = Array.isArray(layerData?.objects) ? layerData.objects : [];
+
+    return objects
+      .filter((obj) => obj && (obj.point || (Number(obj.width) === 0 && Number(obj.height) === 0)))
+      .map((obj) => {
+        const properties = {};
+        (obj.properties ?? []).forEach((property) => {
+          if (!property?.name) return;
+          properties[property.name] = property.value;
+        });
+
+        return {
+          id: obj.id,
+          name: obj.name ?? null,
+          type: obj.type ?? null,
+          x: Number(obj.x) || 0,
+          y: Number(obj.y) || 0,
+          properties,
+          layerName,
+        };
+      });
   }
 
   _buildObjectColliders(objectLayersByName, objectLayerRules) {

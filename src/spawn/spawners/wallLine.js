@@ -26,7 +26,7 @@ const lastWallByScene = new WeakMap();
  * @returns {boolean}             True if at least one enemy spawned
  */
 export function wallLine(ctx, mobKey, t, mobEntry = {}) {
-  const { scene, enemyPools, modeKey = null } = ctx ?? {};
+  const { scene, enemyPools, heroSprite, modeKey = null } = ctx ?? {};
   if (!scene) return false;
 
   // Acquire pool for mob type; bail if unavailable.
@@ -45,6 +45,10 @@ export function wallLine(ctx, mobKey, t, mobEntry = {}) {
   const wallConfig = mobEntry.wall ?? {};
   const baseAi = mobConfig.ai;
   const baseAiParams = mobConfig.aiParams;
+  const spawnKey = mobEntry?.spawn?.key ?? mobEntry?.spawn?.group;
+  const spawnAnchor = spawnKey
+    ? scene.spawnDirector?.getSpawnPoint?.({ heroSprite, attempts: 1, spawnKey })
+    : null;
 
   // Per-scene per-mob cooldown (prevents overly frequent walls).
   const now = scene.time?.now ?? 0;
@@ -167,9 +171,23 @@ export function wallLine(ctx, mobKey, t, mobEntry = {}) {
   // Choose which screen edge to build the wall outside of,
   // and compute the span we need to cover edge-to-edge.
   const horizontal = orientation === 'horizontal';
-  const fixed = horizontal
-    ? (Math.random() < 0.5 ? view.y - margin : view.bottom + margin)
-    : (Math.random() < 0.5 ? view.x - margin : view.right + margin);
+  let fixed;
+
+  if (spawnAnchor && bounds) {
+    if (horizontal) {
+      const distTop = Math.abs(spawnAnchor.y - bounds.top);
+      const distBottom = Math.abs(bounds.bottom - spawnAnchor.y);
+      fixed = distTop <= distBottom ? view.y - margin : view.bottom + margin;
+    } else {
+      const distLeft = Math.abs(spawnAnchor.x - bounds.left);
+      const distRight = Math.abs(bounds.right - spawnAnchor.x);
+      fixed = distLeft <= distRight ? view.x - margin : view.right + margin;
+    }
+  } else {
+    fixed = horizontal
+      ? (Math.random() < 0.5 ? view.y - margin : view.bottom + margin)
+      : (Math.random() < 0.5 ? view.x - margin : view.right + margin);
+  }
 
   buildWall(horizontal, fixed);
 

@@ -83,7 +83,12 @@ export function bossSpawn(ctx, mobKey, t, mobEntry = {}) {
   // Flag ensures boss spawn uses bounded sampling when the map is finite.
   const useBounded = runtime?.isBounded?.();
   const spawnPoint = useBounded
-    ? scene.spawnDirector?.getSpawnPoint?.({ heroSprite, margin: 64, attempts: 20 })
+    ? scene.spawnDirector?.getSpawnPoint?.({
+        heroSprite,
+        margin: 64,
+        attempts: 20,
+        spawnKey: mobEntry?.spawn?.key ?? mobEntry?.spawn?.group,
+      })
     : null;
   const angle = Math.random() * Math.PI * 2;
   const x = spawnPoint?.x ?? (heroSprite.x + Math.cos(angle) * spawnRadius);

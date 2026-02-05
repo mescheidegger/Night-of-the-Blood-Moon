@@ -44,6 +44,7 @@ export const MapRegistry = {
   // Bounded map example: loads a Tiled JSON and uses object layers as colliders.
   bounded_graveyard: {
     type: 'bounded',
+    // tilemap config drives preloading + map creation in BootScene/BoundedMapLoader.
     tilemap: {
       jsonKey: 'map.graveyard.scarywary',
       jsonPath: '/assets/tiles/graveyard/ScaryWary.json',
@@ -76,6 +77,12 @@ export const MapRegistry = {
       objectLayerRules: {
         InvisibleWalls: false,
       }
+    },
+    spawns: {
+      layer: 'Spawns',
+      keys: {
+        player: 'player_start',
+      },
     },
     props: {
       mode: 'tiled',

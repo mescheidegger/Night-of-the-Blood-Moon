@@ -621,7 +621,20 @@ export class SpawnDirector {
    * - Infinite: uses a ring around the hero (existing behavior).
    * - Bounded: samples random points inside world bounds until unblocked.
    */
-  getSpawnPoint({ heroSprite, radius = 0, margin = 0, attempts = 12 } = {}) {
+  getSpawnPoint({ heroSprite, radius = 0, margin = 0, attempts = 12, spawnKey, spawnGroup } = {}) {
+    const spawnPoints = this.scene?.mapSpawnPoints;
+    const resolvedKey = spawnKey ?? spawnGroup;
+    const keyedPoints = resolvedKey
+      ? (spawnPoints?.byKey?.[resolvedKey] ?? spawnPoints?.byName?.[resolvedKey])
+      : null;
+
+    if (keyedPoints?.length) {
+      const point = Phaser.Utils.Array.GetRandom(keyedPoints);
+      if (point) {
+        return { x: point.x, y: point.y };
+      }
+    }
+
     const runtime = this.scene?.mapRuntime;
     // Bounded maps use world bounds for spawn sampling.
     const bounds = runtime?.getWorldBounds?.();

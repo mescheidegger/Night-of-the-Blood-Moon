@@ -40,7 +40,12 @@ export function ring(ctx, mobKey, t, mobEntry = {}) {
     if (!enemyPools?.canSpawn?.(mobKey)) break;
 
     // Choose a random direction around the hero.
-    const spawnPoint = scene.spawnDirector?.getSpawnPoint?.({ heroSprite, radius, attempts: 12 })
+    const spawnPoint = scene.spawnDirector?.getSpawnPoint?.({
+      heroSprite,
+      radius,
+      attempts: 12,
+      spawnKey: mobEntry?.spawn?.key ?? mobEntry?.spawn?.group,
+    })
       ?? { x: heroSprite.x, y: heroSprite.y };
     const x = spawnPoint.x;
     const y = spawnPoint.y;

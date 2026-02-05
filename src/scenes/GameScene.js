@@ -113,6 +113,7 @@ export class GameScene extends Phaser.Scene {
     this.mapLayers = [];
     this.mapCollisionLayers = [];
     this.mapObjectColliders = null;
+    this.mapSpawnPoints = { all: [], byName: {}, byKey: {}, layerNames: [] };
 
     // Bounded maps load a tilemap + colliders instead of infinite ground tiling.
     if (mapType === 'bounded') {
@@ -123,12 +124,14 @@ export class GameScene extends Phaser.Scene {
         map,
         layersByName,
         collisionLayers,
-        objectColliderGroup
+        objectColliderGroup,
+        spawnPoints,
       } = loader.build();
       this.mapTilemap = map;
       this.mapLayers = Object.values(layersByName);
       this.mapCollisionLayers = collisionLayers;
       this.mapObjectColliders = objectColliderGroup;
+      this.mapSpawnPoints = spawnPoints ?? this.mapSpawnPoints;
       this.navGrid = new BoundedNavGrid(this, {
         tilemap: this.mapTilemap,
         collisionLayers: this.mapCollisionLayers,
@@ -184,10 +187,24 @@ export class GameScene extends Phaser.Scene {
     // Track facing so death animations and weapon firing can consult it.
     this.playerFacing = heroEntry.defaultFacing ?? 'down';
 
+    let spawnPoint = null;
+    const spawnKey = this.mapConfig?.spawns?.heroKey ?? 'player';
+    const spawnPoints = this.mapSpawnPoints?.byKey?.[spawnKey] ?? [];
+    if (spawnPoints.length) {
+      spawnPoint = Phaser.Utils.Array.GetRandom(spawnPoints);
+    } else if (this.mapRuntime?.isBounded?.()) {
+      const bounds = this.mapRuntime.getWorldBounds?.();
+      if (bounds) {
+        spawnPoint = { x: bounds.centerX, y: bounds.centerY };
+      }
+    }
+
     // HeroFactory returns a fully-initialised bundle (sprite, controller,
     // health, glow, death controller, etc.). We keep a reference on the scene
     // so subsystems can consume it without tight coupling.
     this.hero = HeroFactory.create(this, heroEntry.key, {
+      x: spawnPoint?.x ?? 0,
+      y: spawnPoint?.y ?? 0,
       onFacingChange: (dir) => { this.playerFacing = dir; }
     });
     // Bounded maps keep the hero from leaving the world rectangle.
