@@ -34,6 +34,7 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
     this.damage = 0;
     this.mobKey = null;
     this.aiBehavior = 'seekPlayer';
+    this.aiParams = null;
     this.rewards = { xp: 0 };
   }
 
@@ -97,6 +98,10 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
     };
 
     this.aiBehavior = overrides.ai ?? config.ai ?? 'seekPlayer';
+    this.aiParams = {
+      ...(config.aiParams ?? {}),
+      ...(overrides.aiParams ?? {}),
+    };
 
     // Render depth from config so bosses can be layered above FX later.
     this.setDepth(config.depth ?? this.depth ?? 2);
@@ -163,5 +168,6 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
     }
 
     this._projectileCfg = null;
+    this.aiParams = null;
   }
 }

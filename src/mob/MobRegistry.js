@@ -293,9 +293,9 @@ export const MobRegistry = {
 
     body: {
       type: 'circle',
-      radius: 18,
-      offsetX: 14,
-      offsetY: 28,
+      radius: 12,
+      offsetX: 20,
+      offsetY: 20,
     },
 
     stats: {
@@ -385,9 +385,9 @@ export const MobRegistry = {
 
     body: {
       type: 'circle',
-      radius: 16,
-      offsetX: 8,
-      offsetY: 20,
+      radius: 12,
+      offsetX: 12,
+      offsetY: 22,
     },
 
     stats: {
@@ -504,9 +504,9 @@ export const MobRegistry = {
 
     body: {
       type: 'circle',
-      radius: 18,
-      offsetX: 14,
-      offsetY: 28,
+      radius: 12,
+      offsetX: 20,
+      offsetY: 34,
     },
 
     stats: {
@@ -623,9 +623,9 @@ export const MobRegistry = {
 
     body: {
       type: 'circle',
-      radius: 18,
-      offsetX: 14,
-      offsetY: 28,
+      radius: 12,
+      offsetX: 20,
+      offsetY: 34,
     },
 
     stats: {
@@ -742,9 +742,9 @@ export const MobRegistry = {
 
     body: {
       type: 'circle',
-      radius: 18,
-      offsetX: 14,
-      offsetY: 28,
+      radius: 12,
+      offsetX: 20,
+      offsetY: 34,
     },
 
     stats: {
@@ -861,9 +861,9 @@ export const MobRegistry = {
 
     body: {
       type: 'circle',
-      radius: 18,
-      offsetX: 14,
-      offsetY: 28,
+      radius: 12,
+      offsetX: 20,
+      offsetY: 34,
     },
 
     stats: {
@@ -980,9 +980,9 @@ export const MobRegistry = {
 
     body: {
       type: 'circle',
-      radius: 18,
-      offsetX: 14,
-      offsetY: 28,
+      radius: 12,
+      offsetX: 20,
+      offsetY: 34,
     },
 
     stats: {
@@ -1099,9 +1099,9 @@ export const MobRegistry = {
 
     body: {
       type: 'circle',
-      radius: 18,
-      offsetX: 14,
-      offsetY: 28,
+      radius: 12,
+      offsetX: 20,
+      offsetY: 34,
     },
 
     stats: {
@@ -1218,9 +1218,9 @@ export const MobRegistry = {
 
     body: {
       type: 'circle',
-      radius: 42,
-      offsetX: 57,
-      offsetY: 60,
+      radius: 16,
+      offsetX: 83,
+      offsetY: 86,
     },
 
     stats: {
@@ -1337,9 +1337,9 @@ export const MobRegistry = {
 
     body: {
       type: 'circle',
-      radius: 24,
-      offsetX: 10,
-      offsetY: 28,
+      radius: 16,
+      offsetX: 18,
+      offsetY: 36,
     },
 
     stats: {

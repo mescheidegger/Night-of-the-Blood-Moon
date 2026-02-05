@@ -17,7 +17,16 @@ export class EnemyBehaviorSystem {
 
     // Default behavior keys (kept as constants so typos don't silently break).
     this._defaultSeekKey = 'seekPlayer';
-    this._boundedSeekKey = 'seekPlayerBoundedFlow';
+
+    // IMPORTANT: infinite-map behavior is the canonical baseline.
+    // These overrides apply only when mapRuntime reports a bounded map.
+    this._boundedBehaviorMap = {
+      seekPlayer: 'seekPlayerBoundedFlow',
+      seekAndMelee: 'seekAndMeleeBounded',
+      seekAndFire: 'seekAndFireBounded',
+      circlePlayer: 'circlePlayerBounded',
+      legionMember: 'legionMemberBounded',
+    };
   }
 
   /** Swap the hero target at runtime. */
@@ -45,18 +54,16 @@ export class EnemyBehaviorSystem {
         ? enemy.aiBehavior
         : this._defaultSeekKey;
 
-    // On bounded maps, swap the "basic chaser" (and legacy/missing behavior) to flow-field.
-    // We only auto-swap the *default seek* so specialty patterns (flySine, circlePlayer, etc.)
-    // keep working exactly as authored.
-    if (isBounded && requestedKey === this._defaultSeekKey) {
-      const boundedFn = behaviors[this._boundedSeekKey];
-      if (typeof boundedFn === 'function') return boundedFn;
-      // If not wired yet, fall back gracefully.
-      return behaviors[this._defaultSeekKey];
-    }
+    // Infinite maps always use the originally requested behavior.
+    // On bounded maps we optionally remap to path-aware variants, but only when
+    // the variant exists so legacy behavior keys remain safe.
+    const boundedKey = isBounded ? this._boundedBehaviorMap[requestedKey] : null;
+    const resolvedKey = boundedKey && typeof behaviors[boundedKey] === 'function'
+      ? boundedKey
+      : requestedKey;
 
-    // Normal resolution path.
-    return behaviors[requestedKey] ?? behaviors[this._defaultSeekKey];
+    // Unknown/legacy behavior keys fall back to default seek behavior.
+    return behaviors[resolvedKey] ?? behaviors[this._defaultSeekKey];
   }
 
   /** Iterate every active enemy and run its configured AI behaviour. */

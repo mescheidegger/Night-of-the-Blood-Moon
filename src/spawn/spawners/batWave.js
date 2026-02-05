@@ -59,20 +59,28 @@ export function batWave(ctx, mobKey, t, mobEntry = {}) {
 
   const runtime = scene.mapRuntime;
   const spawnKey = mobEntry?.spawn?.key ?? mobEntry?.spawn?.group;
-  // Bounded maps skip offscreen spawning and instead use bounded spawn points.
+  // Bounded maps skip offscreen spawning and instead use arena-contained points.
   if (runtime?.isBounded?.()) {
     const totalCount = totalGroups * groupSize;
+    const isFlyingAi = ai === 'flyStraight' || ai === 'flySine';
     for (let i = 0; i < totalCount; i += 1) {
       if (!enemyPools?.canSpawn?.(mobKey)) break;
       const direction = pickOne(directions) ?? 'L2R';
       const velocityX = direction === 'R2L' ? -speed : direction === 'L2R' ? speed : 0;
       const velocityY = direction === 'T2B' ? speed : direction === 'B2T' ? -speed : 0;
-      const spawnPoint = scene.spawnDirector?.getSpawnPoint?.({
-        heroSprite,
-        margin: 32,
-        attempts: 12,
-        spawnKey,
-      });
+
+      let spawnPoint = null;
+      for (let attempt = 0; attempt < 3 && !spawnPoint; attempt += 1) {
+        const candidate = scene.spawnDirector?.getSpawnPoint?.({
+          heroSprite,
+          margin: 32,
+          attempts: 12,
+          spawnKey,
+        });
+        if (!candidate) continue;
+        if (!isFlyingAi && scene.spawnDirector?.isPointBlocked?.(candidate.x, candidate.y)) continue;
+        spawnPoint = candidate;
+      }
       if (!spawnPoint) continue;
       const enemy = pool.get(spawnPoint.x, spawnPoint.y);
       if (!enemy) continue;

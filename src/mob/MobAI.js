@@ -81,6 +81,176 @@ function releaseIfOffscreen(enemy, scene, margin = 64) {
   return false;
 }
 
+
+
+function resolveEnemyAiParams(enemy) {
+  const mobConfig = resolveMobConfig(enemy?.mobKey);
+  return {
+    ...(mobConfig?.aiParams ?? {}),
+    ...(enemy?.aiParams ?? {}),
+  };
+}
+
+function isBoundedNavReady(scene) {
+  return Boolean(scene?.mapRuntime?.isBounded?.() && scene?.navGrid && scene?.flowField);
+}
+
+function isClearLineOfSightTiles(navGrid, x0, y0, x1, y1) {
+  let dx = Math.abs(x1 - x0);
+  let dy = Math.abs(y1 - y0);
+  let sx = x0 < x1 ? 1 : -1;
+  let sy = y0 < y1 ? 1 : -1;
+  let err = dx - dy;
+
+  let x = x0;
+  let y = y0;
+
+  if (!navGrid.inBounds(x, y) || !navGrid.isWalkable(x, y)) return false;
+
+  while (!(x === x1 && y === y1)) {
+    const e2 = err * 2;
+
+    if (e2 > -dy) { err -= dy; x += sx; }
+    if (e2 < dx) { err += dx; y += sy; }
+
+    if (!navGrid.inBounds(x, y) || !navGrid.isWalkable(x, y)) return false;
+  }
+
+  return true;
+}
+
+function updateBoundedLosCache(enemy, scene, nav, fromTile, toTile) {
+  const now = scene?.time?.now ?? 0;
+  const losState = enemy._ffLos ?? (enemy._ffLos = { nextAt: 0, clear: false, lastPTx: null, lastPTy: null });
+
+  if (now >= losState.nextAt || losState.lastPTx !== toTile.tx || losState.lastPTy !== toTile.ty) {
+    losState.nextAt = now + 250 + (enemy._ffLosJitter ?? (enemy._ffLosJitter = ((enemy._id ?? 0) * 13) % 120));
+    losState.lastPTx = toTile.tx;
+    losState.lastPTy = toTile.ty;
+    losState.clear = isClearLineOfSightTiles(nav, fromTile.tx, fromTile.ty, toTile.tx, toTile.ty);
+  }
+
+  return losState.clear;
+}
+
+function steerToWorldPointBounded(enemy, scene, targetX, targetY, opts = {}) {
+  const nav = scene?.navGrid;
+  const flow = scene?.flowField;
+  const speed = Number.isFinite(opts.speed) ? opts.speed : (enemy.speed || 60);
+  const stopDist = Number.isFinite(opts.stopDist) ? opts.stopDist : 6;
+  const arriveDist = Number.isFinite(opts.arriveDist) ? opts.arriveDist : 6;
+  const directSight = opts.directSight !== false;
+
+  if (!isBoundedNavReady(scene) || !enemy || !Number.isFinite(targetX) || !Number.isFinite(targetY)) return false;
+
+  const eTile = nav.worldToTile(enemy.x, enemy.y);
+  const tTile = nav.worldToTile(targetX, targetY);
+  if (!nav.inBounds(eTile.tx, eTile.ty)) {
+    enemy.setVelocity(0, 0);
+    return true;
+  }
+
+  const toTargetX = targetX - enemy.x;
+  const toTargetY = targetY - enemy.y;
+  const directDist = Math.hypot(toTargetX, toTargetY) || 1;
+
+  if (directDist <= stopDist) {
+    enemy.setVelocity(0, 0);
+    return true;
+  }
+
+  if (directSight && nav.inBounds(tTile.tx, tTile.ty) && updateBoundedLosCache(enemy, scene, nav, eTile, tTile)) {
+    enemy.setVelocity((toTargetX / directDist) * speed, (toTargetY / directDist) * speed);
+    enemy.setFlipX(toTargetX < 0);
+    return true;
+  }
+
+  const i = nav.idx(eTile.tx, eTile.ty);
+  let d = flow.dir[i];
+  if (!d) {
+    enemy.setVelocity(0, 0);
+    return true;
+  }
+
+  const now = scene?.time?.now ?? 0;
+  const moved = Math.hypot(enemy.x - (enemy._ffLastX ?? enemy.x), enemy.y - (enemy._ffLastY ?? enemy.y));
+  enemy._ffLastX = enemy.x;
+  enemy._ffLastY = enemy.y;
+
+  if (enemy._ffNextCheckMs == null) enemy._ffNextCheckMs = now + 250;
+  if (enemy._ffStuckScore == null) enemy._ffStuckScore = 0;
+
+  if (now >= enemy._ffNextCheckMs) {
+    enemy._ffNextCheckMs = now + 250;
+    if (moved < 2.5) enemy._ffStuckScore += 1;
+    else enemy._ffStuckScore = Math.max(0, enemy._ffStuckScore - 1);
+
+    if (enemy._ffStuckScore >= 2 && flow.dist) {
+      let bestDir = 0;
+      let bestDist = Infinity;
+      const tx = eTile.tx;
+      const ty = eTile.ty;
+
+      if (ty > 0) {
+        const ni = nav.idx(tx, ty - 1);
+        const nd = flow.dist[ni];
+        if (nd >= 0 && nd < bestDist) { bestDist = nd; bestDir = 1; }
+      }
+      if (tx + 1 < nav.w) {
+        const ni = nav.idx(tx + 1, ty);
+        const nd = flow.dist[ni];
+        if (nd >= 0 && nd < bestDist) { bestDist = nd; bestDir = 2; }
+      }
+      if (ty + 1 < nav.h) {
+        const ni = nav.idx(tx, ty + 1);
+        const nd = flow.dist[ni];
+        if (nd >= 0 && nd < bestDist) { bestDist = nd; bestDir = 3; }
+      }
+      if (tx > 0) {
+        const ni = nav.idx(tx - 1, ty);
+        const nd = flow.dist[ni];
+        if (nd >= 0 && nd < bestDist) { bestDist = nd; bestDir = 4; }
+      }
+
+      if (bestDir) {
+        d = bestDir;
+        enemy._ffStuckScore = 0;
+      }
+    }
+  }
+
+  let nx = eTile.tx;
+  let ny = eTile.ty;
+  if (d === 1) ny -= 1;
+  else if (d === 2) nx += 1;
+  else if (d === 3) ny += 1;
+  else if (d === 4) nx -= 1;
+
+  if (!nav.inBounds(nx, ny) || !nav.isWalkable(nx, ny)) {
+    enemy.setVelocity(0, 0);
+    return true;
+  }
+
+  const target = nav.tileToWorldCenter(nx, ny);
+  const dx = target.x - enemy.x;
+  const dy = target.y - enemy.y;
+  const dist = Math.hypot(dx, dy) || 1;
+
+  if (dist < arriveDist) {
+    enemy.setVelocity(0, 0);
+    return true;
+  }
+
+  enemy.setVelocity((dx / dist) * speed, (dy / dist) * speed);
+  enemy.setFlipX(dx < 0);
+  return true;
+}
+
+function steerToPlayerBounded(enemy, player, scene, opts = {}) {
+  if (!enemy || !player) return false;
+  return steerToWorldPointBounded(enemy, scene, player.x, player.y, opts);
+}
+
 /**
  * Behavior dispatcher: each entry is a function applied once per frame to
  * all active enemies in EnemyBehaviorSystem.update().
@@ -88,176 +258,19 @@ function releaseIfOffscreen(enemy, scene, margin = 64) {
 export const ENEMY_BEHAVIORS = {
 
     seekPlayerBoundedFlow: (enemy, player, scene, dt = 0) => {
-    const nav = scene?.navGrid;
-    const flow = scene?.flowField;
-
-    if (!nav || !flow || !scene?.mapRuntime?.isBounded?.()) {
+    if (!isBoundedNavReady(scene)) {
       return ENEMY_BEHAVIORS.seekPlayer(enemy, player, scene, dt);
     }
 
     const speed = enemy.speed || 60;
-
-    // ---------------------------------------
-    // Helpers (kept inside for easy copy/paste)
-    // ---------------------------------------
-    const isClearLineOfSightTiles = (navGrid, x0, y0, x1, y1) => {
-      // Tile-space line walk. If any tile along the segment is blocked => no LOS.
-      // This is conservative (good): it prevents "cheating" through corners.
-      let dx = Math.abs(x1 - x0);
-      let dy = Math.abs(y1 - y0);
-      let sx = x0 < x1 ? 1 : -1;
-      let sy = y0 < y1 ? 1 : -1;
-      let err = dx - dy;
-
-      let x = x0;
-      let y = y0;
-
-      // Check start tile too (in case we end up in blocked due to body overlap)
-      if (!navGrid.inBounds(x, y) || !navGrid.isWalkable(x, y)) return false;
-
-      while (!(x === x1 && y === y1)) {
-        const e2 = err * 2;
-
-        if (e2 > -dy) { err -= dy; x += sx; }
-        if (e2 <  dx) { err += dx; y += sy; }
-
-        if (!navGrid.inBounds(x, y) || !navGrid.isWalkable(x, y)) return false;
-      }
-
-      return true;
-    };
-
-    // ----------------------------
-    // Tile positions
-    // ----------------------------
-    const eTile = nav.worldToTile(enemy.x, enemy.y);
-    const pTile = nav.worldToTile(player.x, player.y);
-
-    if (!nav.inBounds(eTile.tx, eTile.ty)) {
-      enemy.setVelocity(0, 0);
-      return;
-    }
-
-    // ----------------------------
-    // LOS cache (so 500 mobs is ok)
-    // ----------------------------
-    const now = scene?.time?.now ?? 0;
-    const losState = enemy._ffLos ?? (enemy._ffLos = { nextAt: 0, clear: false, lastPTx: null, lastPTy: null });
-
-    // Recompute LOS ~4x/sec per enemy, and also when player changes tiles.
-    if (now >= losState.nextAt || losState.lastPTx !== pTile.tx || losState.lastPTy !== pTile.ty) {
-      losState.nextAt = now + 250 + (enemy._ffLosJitter ?? (enemy._ffLosJitter = ((enemy._id ?? 0) * 13) % 120));
-      losState.lastPTx = pTile.tx;
-      losState.lastPTy = pTile.ty;
-
-      losState.clear = isClearLineOfSightTiles(nav, eTile.tx, eTile.ty, pTile.tx, pTile.ty);
-    }
-
-    // If LOS is clear, just do smooth direct seek (no grid stair-step).
-    if (losState.clear) {
-      const dx = player.x - enemy.x;
-      const dy = player.y - enemy.y;
-      const dist = Math.hypot(dx, dy) || 1;
-
-      // Small arrival radius prevents pile-on jitter
-      const STOP_DIST = 18;
-      if (dist <= STOP_DIST) {
-        enemy.setVelocity(0, 0);
-        return;
-      }
-
-      enemy.setVelocity((dx / dist) * speed, (dy / dist) * speed);
-      enemy.setFlipX(dx < 0);
-      return;
-    }
-
-    // ----------------------------
-    // Flow-field steering
-    // ----------------------------
-    const i = nav.idx(eTile.tx, eTile.ty);
-    let d = flow.dir[i];
-
-    // Unreachable: do NOT fall back to direct seek (that reintroduces wall exploit).
-    if (!d) {
-      enemy.setVelocity(0, 0);
-      return;
-    }
-
-    // --- Optional stuck escape (still useful near corners) ---
-    const moved = Math.hypot(enemy.x - (enemy._ffLastX ?? enemy.x), enemy.y - (enemy._ffLastY ?? enemy.y));
-    enemy._ffLastX = enemy.x;
-    enemy._ffLastY = enemy.y;
-
-    if (enemy._ffNextCheckMs == null) enemy._ffNextCheckMs = now + 250;
-    if (enemy._ffStuckScore == null) enemy._ffStuckScore = 0;
-
-    if (now >= enemy._ffNextCheckMs) {
-      enemy._ffNextCheckMs = now + 250;
-
-      if (moved < 2.5) enemy._ffStuckScore += 1;
-      else enemy._ffStuckScore = Math.max(0, enemy._ffStuckScore - 1);
-
-      if (enemy._ffStuckScore >= 2 && flow.dist) {
-        let bestDir = 0;
-        let bestDist = Infinity;
-        const tx = eTile.tx;
-        const ty = eTile.ty;
-
-        if (ty > 0) {
-          const ni = nav.idx(tx, ty - 1);
-          const nd = flow.dist[ni];
-          if (nd >= 0 && nd < bestDist) { bestDist = nd; bestDir = 1; }
-        }
-        if (tx + 1 < nav.w) {
-          const ni = nav.idx(tx + 1, ty);
-          const nd = flow.dist[ni];
-          if (nd >= 0 && nd < bestDist) { bestDist = nd; bestDir = 2; }
-        }
-        if (ty + 1 < nav.h) {
-          const ni = nav.idx(tx, ty + 1);
-          const nd = flow.dist[ni];
-          if (nd >= 0 && nd < bestDist) { bestDist = nd; bestDir = 3; }
-        }
-        if (tx > 0) {
-          const ni = nav.idx(tx - 1, ty);
-          const nd = flow.dist[ni];
-          if (nd >= 0 && nd < bestDist) { bestDist = nd; bestDir = 4; }
-        }
-
-        if (bestDir) {
-          d = bestDir;
-          enemy._ffStuckScore = 0;
-        }
-      }
-    }
-
-    // Move toward CENTER of the next tile in flow direction.
-    let nx = eTile.tx;
-    let ny = eTile.ty;
-    if (d === 1) ny -= 1;
-    else if (d === 2) nx += 1;
-    else if (d === 3) ny += 1;
-    else if (d === 4) nx -= 1;
-
-    if (!nav.inBounds(nx, ny) || !nav.isWalkable(nx, ny)) {
-      enemy.setVelocity(0, 0);
-      return;
-    }
-
-    const target = nav.tileToWorldCenter(nx, ny);
-    const dx = target.x - enemy.x;
-    const dy = target.y - enemy.y;
-    const dist = Math.hypot(dx, dy) || 1;
-
-    const arrive = 6;
-    if (dist < arrive) {
-      enemy.setVelocity(0, 0);
-      return;
-    }
-
-    enemy.setVelocity((dx / dist) * speed, (dy / dist) * speed);
-    enemy.setFlipX(dx < 0);
+    steerToPlayerBounded(enemy, player, scene, {
+      speed,
+      stopDist: 18,
+      arriveDist: 6,
+      directSight: true,
+    });
   },
+
 
   /**
    * Direct "seek the player" homing.
@@ -342,6 +355,8 @@ export const ENEMY_BEHAVIORS = {
     const baseAngle = enemy._formationAngle ?? 0;
     const slotAngle = baseAngle + (formation.angularOffset ?? 0);
     const slotRadius = enemy._formationRadius ?? formation.radius;
+    const slotX = cx + Math.cos(slotAngle) * slotRadius;
+    const slotY = cy + Math.sin(slotAngle) * slotRadius;
 
     // Player vector is used as a gentle "move inward" component.
     const playerDx = player.x - enemy.x;
@@ -421,13 +436,17 @@ export const ENEMY_BEHAVIORS = {
 
     // Normalize and scale to final speed for smooth motion.
     const dirMag = Math.hypot(dirX, dirY);
-    if (dirMag > 0.001) {
+    if (enemy._useBoundedMovement && isBoundedNavReady(scene)) {
+      steerToWorldPointBounded(enemy, scene, slotX, slotY, { speed, stopDist: 10, arriveDist: 6, directSight: true });
+      enemy.setFlipX((slotX - enemy.x) < 0);
+    } else if (dirMag > 0.001) {
       const scale = speed / dirMag;
       enemy.setVelocity(dirX * scale, dirY * scale);
+      enemy.setFlipX(dirX < 0);
     } else {
       enemy.setVelocity(0, 0);
+      enemy.setFlipX(false);
     }
-    enemy.setFlipX(dirX < 0);
   },
 
   /**
@@ -488,7 +507,7 @@ export const ENEMY_BEHAVIORS = {
     if (!enemy || !player || enemy._isDying) return;
 
     const mobConfig = resolveMobConfig(enemy.mobKey);
-    const params = mobConfig?.aiParams ?? {};
+    const params = resolveEnemyAiParams(enemy);
 
     const radius = Number.isFinite(params.orbitRadius) ? params.orbitRadius : 320;
     const angularSpeed = Number.isFinite(params.angularSpeed) ? params.angularSpeed : 1.2;
@@ -511,7 +530,9 @@ export const ENEMY_BEHAVIORS = {
     const dist = Math.hypot(dx, dy);
 
     const moveSpeed = mobConfig?.stats?.speed ?? enemy.speed ?? 0;
-    if (dist > 1) enemy.setVelocity((dx / dist) * moveSpeed, (dy / dist) * moveSpeed);
+    if (enemy._useBoundedMovement && isBoundedNavReady(scene)) {
+      steerToWorldPointBounded(enemy, scene, desiredX, desiredY, { speed: moveSpeed, stopDist: 1, arriveDist: 1, directSight: true });
+    } else if (dist > 1) enemy.setVelocity((dx / dist) * moveSpeed, (dy / dist) * moveSpeed);
     else enemy.setVelocity(0, 0);
 
     // Maintain movement animation except during attack.
@@ -565,7 +586,7 @@ export const ENEMY_BEHAVIORS = {
     if (!enemy || !player || enemy._isDying) return;
 
     const mobConfig = resolveMobConfig(enemy.mobKey);
-    const params = mobConfig?.aiParams ?? {};
+    const params = resolveEnemyAiParams(enemy);
 
     // Param-based tuning knobs.
     const meleeRange = Number.isFinite(params.meleeRange) ? params.meleeRange : 48;
@@ -620,7 +641,11 @@ export const ENEMY_BEHAVIORS = {
     // If outside melee range → chase player.
     if (dist > meleeRange) {
       const denom = dist || 1;
-      enemy.setVelocity((dx / denom) * speed, (dy / denom) * speed);
+      if (enemy._useBoundedMovement && isBoundedNavReady(scene)) {
+        steerToPlayerBounded(enemy, player, scene, { speed, stopDist: meleeRange, arriveDist: 6, directSight: true });
+      } else {
+        enemy.setVelocity((dx / denom) * speed, (dy / denom) * speed);
+      }
       enemy.setFlipX(dx < 0);
       ensureMoveAnim();
       return;
@@ -707,7 +732,7 @@ export const ENEMY_BEHAVIORS = {
     if (!enemy || !player || enemy._isDying) return;
 
     const mobConfig = resolveMobConfig(enemy.mobKey);
-    const params = mobConfig?.aiParams ?? {};
+    const params = resolveEnemyAiParams(enemy);
 
     const animSet = mobConfig?.animationKeys ?? {};
     const moveAnim = animSet.move ?? animSet.idle ?? mobConfig?.defaultAnim;
@@ -773,7 +798,11 @@ export const ENEMY_BEHAVIORS = {
 
     if (phase === 'approach' && dist > holdDistance && speed > 0) {
       const denom = dist || 1;
-      enemy.setVelocity((dx / denom) * speed, (dy / denom) * speed);
+      if (enemy._useBoundedMovement && isBoundedNavReady(scene)) {
+        steerToPlayerBounded(enemy, player, scene, { speed, stopDist: holdDistance, arriveDist: 6, directSight: true });
+      } else {
+        enemy.setVelocity((dx / denom) * speed, (dy / denom) * speed);
+      }
       enemy.setFlipX(dx < 0);
       ensureMoveAnim();
     } else {
@@ -817,4 +846,43 @@ export const ENEMY_BEHAVIORS = {
       }
     }
   },
+
+  seekAndMeleeBounded: (enemy, player, scene, dt = 0) => {
+    enemy._useBoundedMovement = true;
+    try {
+      return ENEMY_BEHAVIORS.seekAndMelee(enemy, player, scene, dt);
+    } finally {
+      enemy._useBoundedMovement = false;
+    }
+  },
+
+  seekAndFireBounded: (enemy, player, scene, dt = 0) => {
+    enemy._useBoundedMovement = true;
+    try {
+      return ENEMY_BEHAVIORS.seekAndFire(enemy, player, scene, dt);
+    } finally {
+      enemy._useBoundedMovement = false;
+    }
+  },
+
+  circlePlayerBounded: (enemy, player, scene, dt = 0) => {
+    enemy._useBoundedMovement = true;
+    try {
+      return ENEMY_BEHAVIORS.circlePlayer(enemy, player, scene, dt);
+    } finally {
+      enemy._useBoundedMovement = false;
+    }
+  },
+
+  legionMemberBounded: (enemy, player, scene, dt = 0) => {
+    enemy._useBoundedMovement = true;
+    try {
+      return ENEMY_BEHAVIORS.legionMember(enemy, player, scene, dt);
+    } finally {
+      enemy._useBoundedMovement = false;
+    }
+  },
+
+  // Flying wave movers intentionally remain unchanged on bounded maps: they are
+  // authored as non-nav patterns that can cross the arena independent of flow fields.
 };

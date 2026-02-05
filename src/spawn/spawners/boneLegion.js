@@ -95,18 +95,48 @@ export function boneLegion(ctx, mobKey, t, mobEntry = {}) {
   const radialGain =
     Number(resolveValue(legionConfig.radialGain, t, 0.03)) || 0.03;
 
+  const runtime = scene.mapRuntime;
+  const isBounded = runtime?.isBounded?.() ?? false;
+  const bounds = runtime?.getWorldBounds?.();
   const camera = scene.cameras?.main;
   const view = camera?.worldView;
-  if (!view) return false;
+  if (!isBounded && !view) return false;
 
   let spawnedTotal = 0;
 
-  // Determine formation centers (either explicit viewport corner pattern or random side).
+  // Determine formation centers.
+  // - Infinite maps retain camera-edge/offscreen entry behavior.
+  // - Bounded maps choose arena-contained, walkable centers.
   const centers = legionConfig.centers;
   const margin = 64;
   let centerPoints = [];
 
-  if (centers === 'viewportCorners') {
+  if (isBounded && bounds) {
+    const inset = Number(legionConfig.viewportInset) || 32;
+    if (centers === 'viewportCorners') {
+      centerPoints = [
+        { x: bounds.left + inset, y: bounds.top + inset },
+        { x: bounds.right - inset, y: bounds.top + inset },
+        { x: bounds.left + inset, y: bounds.bottom - inset },
+        { x: bounds.right - inset, y: bounds.bottom - inset },
+      ];
+    } else {
+      const spawnKey = mobEntry?.spawn?.key ?? mobEntry?.spawn?.group;
+      const picked = scene.spawnDirector?.getSpawnPoint?.({
+        heroSprite: scene.hero?.sprite ?? scene.player,
+        margin: Math.max(24, resolvedRadius * 0.4),
+        attempts: 24,
+        spawnKey,
+      });
+      if (picked) centerPoints = [picked];
+    }
+
+    centerPoints = centerPoints.filter((point) => {
+      if (!point) return false;
+      if (scene.spawnDirector?.isPointBlocked?.(point.x, point.y)) return false;
+      return true;
+    });
+  } else if (centers === 'viewportCorners') {
     if (import.meta.env.DEV) {
       countPerLegion = Math.min(countPerLegion, 120);
     }
@@ -118,7 +148,7 @@ export function boneLegion(ctx, mobKey, t, mobEntry = {}) {
       { x: view.right - inset, y: view.bottom - inset },
     ];
   } else {
-    // Original random side behavior (single legion)
+    // Infinite map behavior: single legion enters from a random camera edge.
     const side = Math.floor(Math.random() * 4);
     switch (side) {
       case 0: {
@@ -159,6 +189,8 @@ export function boneLegion(ctx, mobKey, t, mobEntry = {}) {
       }
     }
   }
+
+  if (!centerPoints.length) return false;
 
   const ringSpacing = bodyWidth + gap;
   const minRingRadius = ringSpacing * 0.5;
