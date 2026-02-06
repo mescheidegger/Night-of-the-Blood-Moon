@@ -27,6 +27,11 @@ export class EnemyBehaviorSystem {
       circlePlayer: 'circlePlayerBounded',
       legionMember: 'legionMemberBounded',
     };
+
+    // Debug toggles
+    this.debugStuckMobs = false;
+    this.debugStuckThrottleMs = 1000; // per-mob throttle
+    this.debugStuckMs = 300;          // how long before we consider "stuck"
   }
 
   /** Swap the hero target at runtime. */
@@ -58,9 +63,10 @@ export class EnemyBehaviorSystem {
     // On bounded maps we optionally remap to path-aware variants, but only when
     // the variant exists so legacy behavior keys remain safe.
     const boundedKey = isBounded ? this._boundedBehaviorMap[requestedKey] : null;
-    const resolvedKey = boundedKey && typeof behaviors[boundedKey] === 'function'
-      ? boundedKey
-      : requestedKey;
+    const resolvedKey =
+      boundedKey && typeof behaviors[boundedKey] === 'function'
+        ? boundedKey
+        : requestedKey;
 
     // Unknown/legacy behavior keys fall back to default seek behavior.
     return behaviors[resolvedKey] ?? behaviors[this._defaultSeekKey];
@@ -69,15 +75,41 @@ export class EnemyBehaviorSystem {
   /** Iterate every active enemy and run its configured AI behaviour. */
   update(dt) {
     const group = this.enemyGroup;
-    const heroSprite = this.hero ?? this.scene?.player ?? this.scene?.hero?.sprite;
-    if (!group || !heroSprite) return;
+    const scene = this.scene;
+    const heroSprite = this.hero ?? scene?.player ?? scene?.hero?.sprite;
+    if (!group || !heroSprite || !scene) return;
+
+    // Convert dt to ms for debugging (your nav debugger auto-detects too,
+    // but this keeps the rest of the code consistent).
+    const dtMs = Number(dt);
+    const nowMs = scene?.time?.now ?? 0;
 
     group.children?.iterate?.((enemy) => {
       if (!enemy || !enemy.active || enemy._isDying) return;
       if (enemy._bossController) return;
 
       const behavior = this._resolveBehavior(enemy);
-      behavior(enemy, heroSprite, this.scene, dt);
+
+      // Run AI
+      behavior(enemy, heroSprite, scene, dt);
+
+      // -----------------------------
+      // Debug: log only enemies that are stuck
+      // -----------------------------
+      if (this.debugStuckMobs && scene?.navGrid?.debugMobIfStuck) {
+        // "shouldMove" heuristic:
+        // If your behaviors include idle/wander, tweak this later.
+        // For now, assume active non-dying enemies should generally be moving when a hero exists.
+        const shouldMove = true;
+
+        scene.navGrid.debugMobIfStuck(enemy, dtMs, nowMs, {
+          shouldMove,
+          flowField: scene.flowField,
+          throttleMs: this.debugStuckThrottleMs,
+          stuckMs: this.debugStuckMs,
+          label: 'STUCK_MOB',
+        });
+      }
     });
   }
 

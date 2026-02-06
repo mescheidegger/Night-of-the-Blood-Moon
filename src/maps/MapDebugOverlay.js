@@ -5,10 +5,10 @@ export class MapDebugOverlay {
     {
       depth = 40,
       showCollisionTiles = true,
-      showObjectColliders = false,
+      showObjectColliders = true,
 
       // Nav / flow:
-      showNavBlockedTiles = false,
+      showNavBlockedTiles = true,
       showFlowField = true,
       flowStride = 2,
 
@@ -51,6 +51,7 @@ export class MapDebugOverlay {
   }
 
   refresh() {
+    // Redraw everything each refresh to keep overlays in sync with the scene state.
     this.graphics.clear();
     if (!this.visible) return;
 
@@ -65,14 +66,29 @@ export class MapDebugOverlay {
     }
 
     if (this.showObjectColliders) {
-      const objectGroup = scene?.mapObjectColliders;
-      const children = objectGroup?.getChildren?.() ?? [];
       this.graphics.lineStyle(1, 0xff5555, 0.9);
-      children.forEach((obj) => {
-        const rect = obj?.getBounds?.();
-        if (!rect) return;
-        this.graphics.strokeRect(rect.x, rect.y, rect.width, rect.height);
+
+      const obstacleRects = scene?.mapObstacleRects ?? [];
+      obstacleRects.forEach((rect) => {
+        const x = Number(rect?.x);
+        const y = Number(rect?.y);
+        const w = Number(rect?.w);
+        const h = Number(rect?.h);
+        if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(w) || !Number.isFinite(h)) return;
+        if (w <= 0 || h <= 0) return;
+        this.graphics.strokeRect(x, y, w, h);
       });
+
+      // Backwards-compatible fallback for physics-only object colliders.
+      if (!obstacleRects.length) {
+        const objectGroup = scene?.mapObjectColliders;
+        const children = objectGroup?.getChildren?.() ?? [];
+        children.forEach((obj) => {
+          const rect = obj?.getBounds?.();
+          if (!rect) return;
+          this.graphics.strokeRect(rect.x, rect.y, rect.width, rect.height);
+        });
+      }
     }
 
     if (this.showCollisionTiles) {
@@ -103,7 +119,7 @@ export class MapDebugOverlay {
 
     if (!nav) return;
 
-    const tileSize = nav.tileSize ?? 32;
+    const tileSize = nav.cellSize ?? nav.tileSize ?? 32;
     const w = nav.w ?? 0;
     const h = nav.h ?? 0;
     if (!w || !h) return;

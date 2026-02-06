@@ -113,6 +113,7 @@ export class GameScene extends Phaser.Scene {
     this.mapLayers = [];
     this.mapCollisionLayers = [];
     this.mapObjectColliders = null;
+    this.mapObstacleRects = [];
     this.mapSpawnPoints = { all: [], byName: {}, byKey: {}, layerNames: [] };
 
     // Bounded maps load a tilemap + colliders instead of infinite ground tiling.
@@ -125,18 +126,24 @@ export class GameScene extends Phaser.Scene {
         layersByName,
         collisionLayers,
         objectColliderGroup,
+        obstacleRects,
         spawnPoints,
       } = loader.build();
       this.mapTilemap = map;
       this.mapLayers = Object.values(layersByName);
       this.mapCollisionLayers = collisionLayers;
       this.mapObjectColliders = objectColliderGroup;
+      this.mapObstacleRects = obstacleRects ?? [];
       this.mapSpawnPoints = spawnPoints ?? this.mapSpawnPoints;
       this.navGrid = new BoundedNavGrid(this, {
         tilemap: this.mapTilemap,
         collisionLayers: this.mapCollisionLayers,
-        tileSize: 32,
+        obstacleRects: this.mapObstacleRects,
+        cellSize: 8,
+        paddingPx: 2,
+        tileErodePx: 0,
       });
+
 
       this.flowField = new FlowField(this.navGrid);
     } else {

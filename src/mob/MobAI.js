@@ -136,113 +136,195 @@ function updateBoundedLosCache(enemy, scene, nav, fromTile, toTile) {
 function steerToWorldPointBounded(enemy, scene, targetX, targetY, opts = {}) {
   const nav = scene?.navGrid;
   const flow = scene?.flowField;
-  const speed = Number.isFinite(opts.speed) ? opts.speed : (enemy.speed || 60);
-  const stopDist = Number.isFinite(opts.stopDist) ? opts.stopDist : 6;
-  const arriveDist = Number.isFinite(opts.arriveDist) ? opts.arriveDist : 6;
+
+  if (!isBoundedNavReady(scene) || !enemy || !Number.isFinite(targetX) || !Number.isFinite(targetY)) {
+    return false;
+  }
+
+  const speed = Number.isFinite(opts.speed) ? Number(opts.speed) : Number(enemy.speed || 60);
+  const stopDist = Number.isFinite(opts.stopDist) ? Number(opts.stopDist) : 6;
   const directSight = opts.directSight !== false;
 
-  if (!isBoundedNavReady(scene) || !enemy || !Number.isFinite(targetX) || !Number.isFinite(targetY)) return false;
+  const body = enemy.body;
 
-  const eTile = nav.worldToTile(enemy.x, enemy.y);
+  // Use physics body center for nav sampling / movement math.
+  const ex = body?.center?.x ?? enemy.x;
+  const ey = body?.center?.y ?? enemy.y;
+
+  const eTile = nav.worldToTile(ex, ey);
   const tTile = nav.worldToTile(targetX, targetY);
+
+  // If enemy is standing in a nav-blocked cell, immediately escape to nearest walkable.
+  if (nav.inBounds(eTile.tx, eTile.ty) && !nav.isWalkable(eTile.tx, eTile.ty)) {
+    const esc = nav.findNearestWalkableTile(eTile.tx, eTile.ty, 6);
+    if (esc) {
+      const wp = nav.tileToWorldCenter(esc.tx, esc.ty);
+      const dx = wp.x - ex;
+      const dy = wp.y - ey;
+      const d = Math.hypot(dx, dy) || 1;
+
+      enemy.setVelocity((dx / d) * speed, (dy / d) * speed);
+      enemy.setFlipX(dx < 0);
+      return true;
+    }
+
+    enemy.setVelocity(0, 0);
+    return true;
+  }
+
   if (!nav.inBounds(eTile.tx, eTile.ty)) {
     enemy.setVelocity(0, 0);
     return true;
   }
 
-  const toTargetX = targetX - enemy.x;
-  const toTargetY = targetY - enemy.y;
+  const toTargetX = targetX - ex;
+  const toTargetY = targetY - ey;
   const directDist = Math.hypot(toTargetX, toTargetY) || 1;
 
+  // Only true hard stop.
   if (directDist <= stopDist) {
     enemy.setVelocity(0, 0);
     return true;
   }
 
-  if (directSight && nav.inBounds(tTile.tx, tTile.ty) && updateBoundedLosCache(enemy, scene, nav, eTile, tTile)) {
-    enemy.setVelocity((toTargetX / directDist) * speed, (toTargetY / directDist) * speed);
-    enemy.setFlipX(toTargetX < 0);
-    return true;
-  }
+  // Direct LOS chase if allowed.
+  if (
+    directSight &&
+    nav.inBounds(tTile.tx, tTile.ty) &&
+    updateBoundedLosCache(enemy, scene, nav, eTile, tTile)
+  ) {
+    let vx = (toTargetX / directDist) * speed;
+    let vy = (toTargetY / directDist) * speed;
 
-  const i = nav.idx(eTile.tx, eTile.ty);
-  let d = flow.dir[i];
-  if (!d) {
-    enemy.setVelocity(0, 0);
-    return true;
-  }
+    if (body?.blocked) {
+      if (vx < 0 && body.blocked.left) vx = 0;
+      if (vx > 0 && body.blocked.right) vx = 0;
+      if (vy < 0 && body.blocked.up) vy = 0;
+      if (vy > 0 && body.blocked.down) vy = 0;
+    }
 
-  const now = scene?.time?.now ?? 0;
-  const moved = Math.hypot(enemy.x - (enemy._ffLastX ?? enemy.x), enemy.y - (enemy._ffLastY ?? enemy.y));
-  enemy._ffLastX = enemy.x;
-  enemy._ffLastY = enemy.y;
-
-  if (enemy._ffNextCheckMs == null) enemy._ffNextCheckMs = now + 250;
-  if (enemy._ffStuckScore == null) enemy._ffStuckScore = 0;
-
-  if (now >= enemy._ffNextCheckMs) {
-    enemy._ffNextCheckMs = now + 250;
-    if (moved < 2.5) enemy._ffStuckScore += 1;
-    else enemy._ffStuckScore = Math.max(0, enemy._ffStuckScore - 1);
-
-    if (enemy._ffStuckScore >= 2 && flow.dist) {
-      let bestDir = 0;
-      let bestDist = Infinity;
-      const tx = eTile.tx;
-      const ty = eTile.ty;
-
-      if (ty > 0) {
-        const ni = nav.idx(tx, ty - 1);
-        const nd = flow.dist[ni];
-        if (nd >= 0 && nd < bestDist) { bestDist = nd; bestDir = 1; }
-      }
-      if (tx + 1 < nav.w) {
-        const ni = nav.idx(tx + 1, ty);
-        const nd = flow.dist[ni];
-        if (nd >= 0 && nd < bestDist) { bestDist = nd; bestDir = 2; }
-      }
-      if (ty + 1 < nav.h) {
-        const ni = nav.idx(tx, ty + 1);
-        const nd = flow.dist[ni];
-        if (nd >= 0 && nd < bestDist) { bestDist = nd; bestDir = 3; }
-      }
-      if (tx > 0) {
-        const ni = nav.idx(tx - 1, ty);
-        const nd = flow.dist[ni];
-        if (nd >= 0 && nd < bestDist) { bestDist = nd; bestDir = 4; }
-      }
-
-      if (bestDir) {
-        d = bestDir;
-        enemy._ffStuckScore = 0;
-      }
+    if (vx !== 0 || vy !== 0) {
+      enemy.setVelocity(vx, vy);
+      enemy.setFlipX(vx < 0);
+      return true;
     }
   }
 
-  let nx = eTile.tx;
-  let ny = eTile.ty;
-  if (d === 1) ny -= 1;
-  else if (d === 2) nx += 1;
-  else if (d === 3) ny += 1;
-  else if (d === 4) nx -= 1;
+  const i = nav.idx(eTile.tx, eTile.ty);
+  let d = flow?.dir?.[i] ?? 0;
 
-  if (!nav.inBounds(nx, ny) || !nav.isWalkable(nx, ny)) {
+  const dirToStep = (dir) => {
+    if (dir === 1) return { dx: 0, dy: -1 };
+    if (dir === 2) return { dx: 1, dy: 0 };
+    if (dir === 3) return { dx: 0, dy: 1 };
+    if (dir === 4) return { dx: -1, dy: 0 };
+    if (dir === 5) return { dx: 1, dy: -1 };
+    if (dir === 6) return { dx: 1, dy: 1 };
+    if (dir === 7) return { dx: -1, dy: 1 };
+    if (dir === 8) return { dx: -1, dy: -1 };
+    return { dx: 0, dy: 0 };
+  };
+
+  const pickBestNeighborDir = (preferCardinals = false) => {
+    const distArr = flow?.dist;
+    if (!distArr) return 0;
+
+    const here = distArr[i];
+    if (here < 0) return 0;
+
+    let bestDir = 0;
+    let bestDist = here;
+
+    const tx = eTile.tx;
+    const ty = eTile.ty;
+
+    const consider = (nx, ny, dirCode) => {
+      if (!nav.inBounds(nx, ny) || !nav.isWalkable(nx, ny)) return;
+      const ni = nav.idx(nx, ny);
+      const nd = distArr[ni];
+      if (nd >= 0 && nd < bestDist) {
+        bestDist = nd;
+        bestDir = dirCode;
+      }
+    };
+
+    consider(tx, ty - 1, 1);
+    consider(tx + 1, ty, 2);
+    consider(tx, ty + 1, 3);
+    consider(tx - 1, ty, 4);
+
+    if (!preferCardinals) {
+      consider(tx + 1, ty - 1, 5);
+      consider(tx + 1, ty + 1, 6);
+      consider(tx - 1, ty + 1, 7);
+      consider(tx - 1, ty - 1, 8);
+    }
+
+    return bestDir;
+  };
+
+  if (!d) {
+    d = pickBestNeighborDir(false);
+    if (!d) {
+      enemy.setVelocity(0, 0);
+      return true;
+    }
+  }
+
+  let step = dirToStep(d);
+  let nextTx = eTile.tx + step.dx;
+  let nextTy = eTile.ty + step.dy;
+
+  if (!nav.inBounds(nextTx, nextTy) || !nav.isWalkable(nextTx, nextTy)) {
+    const best = pickBestNeighborDir(true) || pickBestNeighborDir(false);
+    if (!best) {
+      enemy.setVelocity(0, 0);
+      return true;
+    }
+    step = dirToStep(best);
+  }
+
+  const mag = Math.hypot(step.dx, step.dy) || 1;
+  let vx = (step.dx / mag) * speed;
+  let vy = (step.dy / mag) * speed;
+
+  if (body?.blocked) {
+    if (vx < 0 && body.blocked.left) vx = 0;
+    if (vx > 0 && body.blocked.right) vx = 0;
+    if (vy < 0 && body.blocked.up) vy = 0;
+    if (vy > 0 && body.blocked.down) vy = 0;
+  }
+
+  if (vx === 0 && vy === 0) {
+    const bl = body?.blocked;
+
+    const tryCard = (dx, dy, blocked) => {
+      if (blocked) return null;
+      const nx = eTile.tx + dx;
+      const ny = eTile.ty + dy;
+      if (!nav.inBounds(nx, ny) || !nav.isWalkable(nx, ny)) return null;
+      return { dx, dy };
+    };
+
+    const s =
+      tryCard(0, -1, bl?.up) ||
+      tryCard(1, 0, bl?.right) ||
+      tryCard(0, 1, bl?.down) ||
+      tryCard(-1, 0, bl?.left);
+
+    if (s) {
+      vx = s.dx * speed;
+      vy = s.dy * speed;
+    }
+  }
+
+  if (vx === 0 && vy === 0) {
     enemy.setVelocity(0, 0);
     return true;
   }
 
-  const target = nav.tileToWorldCenter(nx, ny);
-  const dx = target.x - enemy.x;
-  const dy = target.y - enemy.y;
-  const dist = Math.hypot(dx, dy) || 1;
-
-  if (dist < arriveDist) {
-    enemy.setVelocity(0, 0);
-    return true;
-  }
-
-  enemy.setVelocity((dx / dist) * speed, (dy / dist) * speed);
-  enemy.setFlipX(dx < 0);
+  enemy.setVelocity(vx, vy);
+  enemy.setFlipX(vx < 0);
   return true;
 }
 
@@ -250,6 +332,7 @@ function steerToPlayerBounded(enemy, player, scene, opts = {}) {
   if (!enemy || !player) return false;
   return steerToWorldPointBounded(enemy, scene, player.x, player.y, opts);
 }
+
 
 /**
  * Behavior dispatcher: each entry is a function applied once per frame to
@@ -264,11 +347,16 @@ export const ENEMY_BEHAVIORS = {
 
     const speed = enemy.speed || 60;
     steerToPlayerBounded(enemy, player, scene, {
-      speed,
-      stopDist: 18,
-      arriveDist: 6,
-      directSight: true,
-    });
+  speed,
+  stopDist: 18,
+  arriveDist: 6,
+  directSight: true,
+
+  // add these
+  debugStops: true,
+  debugThrottleMs: 0, // no throttle while debugging
+});
+
   },
 
 

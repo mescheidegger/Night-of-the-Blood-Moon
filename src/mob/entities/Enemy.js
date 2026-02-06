@@ -1,8 +1,5 @@
 import Phaser from 'phaser';
-import {
-  applyBodyConfig,
-  resolveMobConfig,
-} from '../MobRegistry.js';
+import { applyBodyConfig, resolveMobConfig } from '../MobRegistry.js';
 import { resolveMobStats } from '../MobStatsFactory.js';
 
 /**
@@ -43,16 +40,10 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
    * in the world. Called by Pool.get() immediately after acquisition.
    */
   reset(x, y, mobKey, overrides = {}) {
-    if (!mobKey) {
-      console.warn('[Enemy.reset] called without mobKey');
-      return;
-    }
+    if (!mobKey) return;
 
     const config = resolveMobConfig(mobKey);
-    if (!config) {
-      console.warn('[Enemy.reset] no mob config for key:', mobKey);
-      return;
-    }
+    if (!config) return;
 
     this.mobKey = mobKey;
     this.tier = config.tier;
@@ -73,7 +64,6 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
     if (config.origin) {
       this.setOrigin(config.origin.x ?? 0.5, config.origin.y ?? 0.5);
     }
-
     if (config.scale !== undefined) {
       this.setScale(config.scale);
     }
@@ -125,9 +115,10 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
     this.setFlip(false, false);
 
     // Either play the configured animation or fall back to the static frame.
-    const animKey = overrides.animation
-      ?? config.defaultAnim
-      ?? this.animationKeys?.idle;
+    const animKey =
+      overrides.animation ??
+      config.defaultAnim ??
+      this.animationKeys?.idle;
 
     if (animKey && this.anims?.animationManager?.exists?.(animKey)) {
       this.play(animKey, true);
@@ -138,9 +129,8 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
 
     this.setActive(true).setVisible(true);
 
-    // Now that mobKey/ai/stats are hydrated, this is the canonical "spawned" moment.
+    // Canonical "spawned" moment.
     this.scene?.events?.emit?.('enemy:spawned', { enemy: this });
-
 
     // Clear transient AI metadata so pooled instances don't leak state.
     this._baseVel = null;
@@ -149,6 +139,15 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
     this._waveAmplitude = undefined;
     this._waveFrequency = undefined;
     this._theta = undefined;
+
+    // Flow-field steering metadata (cleared each spawn)
+    this._ffLastX = undefined;
+    this._ffLastY = undefined;
+    this._ffNextCheckMs = undefined;
+    this._ffStuckScore = undefined;
+
+    // LOS cache metadata (cleared each spawn)
+    this._losCanSee = undefined;
 
     // Legion formation metadata (cleared each spawn)
     this._formationId = null;
