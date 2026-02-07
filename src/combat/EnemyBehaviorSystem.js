@@ -1,4 +1,4 @@
-import { ENEMY_BEHAVIORS } from '../mob/MobAI.js';
+import { ENEMY_BEHAVIORS, resolveBoundedNavPair } from '../mob/MobAI.js';
 
 /**
  * EnemyBehaviorSystem keeps the per-frame AI loop out of GameScene. The runner
@@ -96,15 +96,17 @@ export class EnemyBehaviorSystem {
       // -----------------------------
       // Debug: log only enemies that are stuck
       // -----------------------------
-      if (this.debugStuckMobs && scene?.navGrid?.debugMobIfStuck) {
+      const { nav, flow } = resolveBoundedNavPair(scene, enemy);
+      const debugNav = nav ?? scene?.navGrid ?? null;
+      if (this.debugStuckMobs && debugNav?.debugMobIfStuck) {
         // "shouldMove" heuristic:
         // If your behaviors include idle/wander, tweak this later.
         // For now, assume active non-dying enemies should generally be moving when a hero exists.
         const shouldMove = true;
 
-        scene.navGrid.debugMobIfStuck(enemy, dtMs, nowMs, {
+        debugNav.debugMobIfStuck(enemy, dtMs, nowMs, {
           shouldMove,
-          flowField: scene.flowField,
+          flowField: flow ?? scene.flowField,
           throttleMs: this.debugStuckThrottleMs,
           stuckMs: this.debugStuckMs,
           label: 'STUCK_MOB',

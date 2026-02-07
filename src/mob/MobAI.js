@@ -91,8 +91,41 @@ function resolveEnemyAiParams(enemy) {
   };
 }
 
-function isBoundedNavReady(scene) {
-  return Boolean(scene?.mapRuntime?.isBounded?.() && scene?.navGrid && scene?.flowField);
+function resolveEnemyBodySize(enemy) {
+  const body = enemy?.body;
+  const bodyWidth = Number.isFinite(body?.width) ? body.width : Number(enemy?.width) || 0;
+  const bodyHeight = Number.isFinite(body?.height) ? body.height : Number(enemy?.height) || 0;
+  return Math.max(bodyWidth, bodyHeight);
+}
+
+export function resolveBoundedNavPair(scene, enemy, { sizeThreshold = 28 } = {}) {
+  if (!scene?.mapRuntime?.isBounded?.()) return { nav: null, flow: null, sizeClass: 'none' };
+
+  const size = resolveEnemyBodySize(enemy);
+  const wantsBig = Number.isFinite(size) && size >= sizeThreshold;
+  const navSmall = scene?.navGridSmall ?? scene?.navGrid ?? null;
+  const flowSmall = scene?.flowFieldSmall ?? scene?.flowField ?? null;
+  const navBig = scene?.navGridBig ?? null;
+  const flowBig = scene?.flowFieldBig ?? null;
+
+  if (wantsBig && navBig && flowBig) {
+    return { nav: navBig, flow: flowBig, sizeClass: 'big' };
+  }
+
+  if (navSmall && flowSmall) {
+    return { nav: navSmall, flow: flowSmall, sizeClass: 'small' };
+  }
+
+  if (navBig && flowBig) {
+    return { nav: navBig, flow: flowBig, sizeClass: 'big' };
+  }
+
+  return { nav: null, flow: null, sizeClass: 'none' };
+}
+
+function isBoundedNavReady(scene, enemy) {
+  const { nav, flow } = resolveBoundedNavPair(scene, enemy);
+  return Boolean(nav && flow);
 }
 
 function isClearLineOfSightTiles(navGrid, x0, y0, x1, y1) {
@@ -134,10 +167,9 @@ function updateBoundedLosCache(enemy, scene, nav, fromTile, toTile) {
 }
 
 function steerToWorldPointBounded(enemy, scene, targetX, targetY, opts = {}) {
-  const nav = scene?.navGrid;
-  const flow = scene?.flowField;
+  const { nav, flow } = resolveBoundedNavPair(scene, enemy);
 
-  if (!isBoundedNavReady(scene) || !enemy || !Number.isFinite(targetX) || !Number.isFinite(targetY)) {
+  if (!isBoundedNavReady(scene, enemy) || !enemy || !Number.isFinite(targetX) || !Number.isFinite(targetY)) {
     return false;
   }
 
@@ -341,7 +373,7 @@ function steerToPlayerBounded(enemy, player, scene, opts = {}) {
 export const ENEMY_BEHAVIORS = {
 
     seekPlayerBoundedFlow: (enemy, player, scene, dt = 0) => {
-    if (!isBoundedNavReady(scene)) {
+    if (!isBoundedNavReady(scene, enemy)) {
       return ENEMY_BEHAVIORS.seekPlayer(enemy, player, scene, dt);
     }
 
@@ -524,7 +556,7 @@ export const ENEMY_BEHAVIORS = {
 
     // Normalize and scale to final speed for smooth motion.
     const dirMag = Math.hypot(dirX, dirY);
-    if (enemy._useBoundedMovement && isBoundedNavReady(scene)) {
+    if (enemy._useBoundedMovement && isBoundedNavReady(scene, enemy)) {
       steerToWorldPointBounded(enemy, scene, slotX, slotY, { speed, stopDist: 10, arriveDist: 6, directSight: true });
       enemy.setFlipX((slotX - enemy.x) < 0);
     } else if (dirMag > 0.001) {

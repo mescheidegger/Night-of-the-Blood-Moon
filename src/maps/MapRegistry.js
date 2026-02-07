@@ -75,7 +75,7 @@ export const MapRegistry = {
         Collision: true,
       },
       objectLayerRules: {
-        InvisibleWalls: false,
+        InvisibleWalls: true,
       }
     },
     spawns: {

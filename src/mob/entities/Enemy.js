@@ -87,7 +87,20 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
       ...(overrides.rewards ?? {}),
     };
 
-    this.aiBehavior = overrides.ai ?? config.ai ?? 'seekPlayer';
+    const runtime = this.scene?.mapRuntime;
+    const isBounded = runtime?.isBounded?.() ?? false;
+    const mapKey = this.scene?.mapKey;
+    const aiByMap = {
+      ...(config.aiByMap ?? {}),
+      ...(overrides.aiByMap ?? {}),
+    };
+    const mapSpecificAi =
+      mapKey && aiByMap.maps && typeof aiByMap.maps === 'object'
+        ? aiByMap.maps[mapKey]
+        : undefined;
+    const mapTypeAi = isBounded ? aiByMap.bounded : aiByMap.infinite;
+
+    this.aiBehavior = overrides.ai ?? mapSpecificAi ?? mapTypeAi ?? config.ai ?? 'seekPlayer';
     this.aiParams = {
       ...(config.aiParams ?? {}),
       ...(overrides.aiParams ?? {}),

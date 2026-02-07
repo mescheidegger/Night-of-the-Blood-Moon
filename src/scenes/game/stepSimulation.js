@@ -26,11 +26,18 @@ export function stepSimulation(scene, dt) {
   // --- NAVIGATION FIELD UPDATE (bounded maps only) ---
   // NOTE: In this codebase `scene.hero` is a bundle; position lives on `scene.hero.sprite`
   // (and `scene.player` getter points to that sprite too).
-  if (scene.mapRuntime?.isBounded?.() && scene.flowField && scene.navGrid) {
+  if (scene.mapRuntime?.isBounded?.() && (scene.flowFieldSmall || scene.flowFieldBig || scene.flowField)) {
     const heroSprite = scene.player ?? scene.hero?.sprite ?? null;
     if (heroSprite) {
       const now = scene.time?.now ?? 0;
-      scene.flowField.updateTargetWorld(heroSprite.x, heroSprite.y, now);
+      const flowFields = [];
+      if (scene.flowFieldSmall || scene.flowFieldBig) {
+        if (scene.flowFieldSmall) flowFields.push(scene.flowFieldSmall);
+        if (scene.flowFieldBig) flowFields.push(scene.flowFieldBig);
+      } else if (scene.flowField) {
+        flowFields.push(scene.flowField);
+      }
+      flowFields.forEach((field) => field.updateTargetWorld(heroSprite.x, heroSprite.y, now));
 
       // If the debug overlay is visible, refresh so flow arrows update as the hero moves.
       // (If you later return a boolean from updateTargetWorld when it actually rebuilds,

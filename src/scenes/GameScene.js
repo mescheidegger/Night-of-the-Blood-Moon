@@ -135,7 +135,7 @@ export class GameScene extends Phaser.Scene {
       this.mapObjectColliders = objectColliderGroup;
       this.mapObstacleRects = obstacleRects ?? [];
       this.mapSpawnPoints = spawnPoints ?? this.mapSpawnPoints;
-      this.navGrid = new BoundedNavGrid(this, {
+      this.navGridSmall = new BoundedNavGrid(this, {
         tilemap: this.mapTilemap,
         collisionLayers: this.mapCollisionLayers,
         obstacleRects: this.mapObstacleRects,
@@ -144,8 +144,20 @@ export class GameScene extends Phaser.Scene {
         tileErodePx: 0,
       });
 
+      this.navGridBig = new BoundedNavGrid(this, {
+        tilemap: this.mapTilemap,
+        collisionLayers: this.mapCollisionLayers,
+        obstacleRects: this.mapObstacleRects,
+        cellSize: 8,
+        paddingPx: 24,
+        tileErodePx: 0,
+      });
 
-      this.flowField = new FlowField(this.navGrid);
+      this.flowFieldSmall = new FlowField(this.navGridSmall);
+      this.flowFieldBig = new FlowField(this.navGridBig);
+
+      this.navGrid = this.navGridSmall;
+      this.flowField = this.flowFieldSmall;
     } else {
       // Tile the ground texture independently of camera scroll/zoom.
       this.groundLayer = new GroundLayer(this, { ...this.mapConfig.ground, mode: 'infinite' });
