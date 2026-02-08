@@ -83,6 +83,13 @@ export const MapRegistry = {
       keys: {
         player: 'player_start',
       },
+      // Group enemy spawns by prefix and reserve boss spawn for the werewolf encounter.
+      groups: {
+        enemy: { prefix: 'enemy_spawn' },
+        boss: { key: 'boss_spawn' },
+      },
+      // Default to the enemy group when bounded spawns omit an explicit key.
+      defaultEnemyKey: 'enemy',
     },
     props: {
       mode: 'tiled',

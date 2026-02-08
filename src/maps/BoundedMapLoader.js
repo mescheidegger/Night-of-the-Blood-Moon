@@ -137,9 +137,49 @@ export class BoundedMapLoader {
 
     const groups = spawnConfig?.groups ?? {};
     Object.entries(groups).forEach(([key, group]) => {
-      const name = group?.key ?? group?.name;
-      if (!name) return;
-      const points = byName[name] ?? [];
+      // Normalize string group definitions into a config object.
+      if (!group) return;
+      const normalized = typeof group === 'string' ? { key: group } : group;
+
+      // Collect matched points while deduplicating across match rules.
+      const matched = new Map();
+      const addPoints = (points = []) => {
+        points.forEach((point) => {
+          if (!point) return;
+          // Prefer the Tiled object id, fall back to a stable composite key.
+          matched.set(point.id ?? `${point.layerName}:${point.name}:${point.x}:${point.y}`, point);
+        });
+      };
+
+      // Exact-name matching (back-compat with older group configs).
+      const name = normalized?.key ?? normalized?.name;
+      if (name) {
+        addPoints(byName[name] ?? []);
+      }
+
+      // Prefix matching for multi-point groupings like enemy_spawn1/2/3.
+      const prefix = normalized?.prefix;
+      if (prefix) {
+        addPoints(all.filter((point) => point?.name?.startsWith(prefix)));
+      }
+
+      // Property matching for custom object metadata (e.g., spawnGroup=enemy).
+      const property = normalized?.property;
+      if (property) {
+        const matchValue = normalized?.value;
+        addPoints(
+          all.filter((point) => {
+            const propValue = point?.properties?.[property];
+            // When no value is supplied, accept any defined property.
+            if (matchValue === undefined) {
+              return propValue !== undefined;
+            }
+            return propValue === matchValue;
+          })
+        );
+      }
+
+      const points = Array.from(matched.values());
       if (points.length) {
         byKey[key] = points;
       }

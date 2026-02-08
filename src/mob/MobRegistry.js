@@ -173,6 +173,13 @@ export const MobRegistry = {
       death: null
     },
 
+    collision: {
+      worldBounds: false,
+      mapLayers: false,
+      mapObjects: false,
+      props: false,
+    },
+
     /**
      * Default AI for bats (wave spawners may override dynamically).
      */
@@ -1732,6 +1739,13 @@ export const MobRegistry = {
       death: null
     },
 
+    collision: {
+      worldBounds: true,
+      mapLayers: false,
+      mapObjects: false,
+      props: false,
+    },
+
     ai: 'seekAndMelee',
     aiParams: {
       meleeRange: 48,
@@ -1840,4 +1854,24 @@ export function applyBodyConfig(enemy, config) {
  */
 export function resolveMobConfig(mobKey) {
   return MobRegistry[mobKey] ?? MobRegistry.evileye;
+}
+
+export const DEFAULT_MOB_COLLISION_FLAGS = {
+  worldBounds: true,
+  mapLayers: true,
+  mapObjects: true,
+  props: true,
+};
+
+export function resolveMobCollisionFlags(mobKeyOrConfig, overrides = {}) {
+  const config =
+    typeof mobKeyOrConfig === 'string'
+      ? resolveMobConfig(mobKeyOrConfig)
+      : mobKeyOrConfig;
+
+  return {
+    ...DEFAULT_MOB_COLLISION_FLAGS,
+    ...(config?.collision ?? {}),
+    ...(overrides?.collision ?? {}),
+  };
 }

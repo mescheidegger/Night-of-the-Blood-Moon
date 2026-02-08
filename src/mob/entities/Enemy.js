@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { applyBodyConfig, resolveMobConfig } from '../MobRegistry.js';
+import { applyBodyConfig, resolveMobCollisionFlags, resolveMobConfig } from '../MobRegistry.js';
 import { resolveMobStats } from '../MobStatsFactory.js';
 
 /**
@@ -86,6 +86,8 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
       ...(config.rewards ?? {}),
       ...(overrides.rewards ?? {}),
     };
+
+    this.collisionFlags = resolveMobCollisionFlags(config, overrides);
 
     const runtime = this.scene?.mapRuntime;
     const isBounded = runtime?.isBounded?.() ?? false;

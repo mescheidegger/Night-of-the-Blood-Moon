@@ -621,9 +621,29 @@ export class SpawnDirector {
    * - Infinite: uses a ring around the hero (existing behavior).
    * - Bounded: samples random points inside world bounds until unblocked.
    */
-  getSpawnPoint({ heroSprite, radius = 0, margin = 0, attempts = 12, spawnKey, spawnGroup } = {}) {
+  getSpawnPoint({
+    heroSprite,
+    radius = 0,
+    margin = 0,
+    attempts = 12,
+    spawnKey,
+    spawnGroup,
+    requireKey = false,
+  } = {}) {
     const spawnPoints = this.scene?.mapSpawnPoints;
-    const resolvedKey = spawnKey ?? spawnGroup;
+    const runtime = this.scene?.mapRuntime;
+    // Only bounded maps should use grouped spawn points by default.
+    const isBounded = runtime?.isBounded?.();
+    let resolvedKey = spawnKey ?? spawnGroup;
+
+    if (!resolvedKey && isBounded) {
+      // When no explicit key is provided, fall back to the configured enemy group.
+      const defaultKey = this.scene?.mapConfig?.spawns?.defaultEnemyKey ?? 'enemy';
+      if (spawnPoints?.byKey?.[defaultKey]?.length) {
+        resolvedKey = defaultKey;
+      }
+    }
+
     const keyedPoints = resolvedKey
       ? (spawnPoints?.byKey?.[resolvedKey] ?? spawnPoints?.byName?.[resolvedKey])
       : null;
@@ -635,7 +655,11 @@ export class SpawnDirector {
       }
     }
 
-    const runtime = this.scene?.mapRuntime;
+    // If a caller requires a keyed spawn, exit early when none are available.
+    if (requireKey && resolvedKey) {
+      return null;
+    }
+
     // Bounded maps use world bounds for spawn sampling.
     const bounds = runtime?.getWorldBounds?.();
 

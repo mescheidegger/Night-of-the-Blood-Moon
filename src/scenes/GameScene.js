@@ -25,7 +25,7 @@ import { EnemyBehaviorSystem } from '../combat/EnemyBehaviorSystem.js';
 import { EnemyProjectileSystem } from '../combat/EnemyProjectileSystem.js';
 import { PlayerDerivedStatsApplier } from '../combat/PlayerDerivedStatsApplier.js';
 import { HUDManager } from '../ui/HUDManager.js';
-import { resolveMobConfig } from '../mob/MobRegistry.js';
+import { resolveMobCollisionFlags, resolveMobConfig } from '../mob/MobRegistry.js';
 import { PassiveManager } from '../passives/PassiveManager.js';
 import { PassiveRegistry } from '../passives/PassiveRegistry.js';
 import { DamageNumberSystem } from '../combat/DamageNumberSystem.js';
@@ -273,10 +273,12 @@ export class GameScene extends Phaser.Scene {
     // Ensure bounded maps keep enemy bodies inside world bounds as they spawn.
     if (this.mapRuntime?.isBounded?.()) {
       enemyGroup.children?.iterate?.((enemy) => {
-        enemy?.body?.setCollideWorldBounds?.(true);
+        const flags = enemy?.collisionFlags ?? resolveMobCollisionFlags(enemy?.mobKey);
+        enemy?.body?.setCollideWorldBounds?.(flags.worldBounds !== false);
       });
       enemyGroup.on?.('add', (enemy) => {
-        enemy?.body?.setCollideWorldBounds?.(true);
+        const flags = enemy?.collisionFlags ?? resolveMobCollisionFlags(enemy?.mobKey);
+        enemy?.body?.setCollideWorldBounds?.(flags.worldBounds !== false);
       });
     }
     if (propColliders) {
@@ -286,9 +288,8 @@ export class GameScene extends Phaser.Scene {
         propColliders,
         /* collideCallback */ undefined,
         /* processCallback */ (enemy /* from enemyGroup */, _prop /* from propColliders */) => {
-          const cfg = enemy?.mobKey ? resolveMobConfig(enemy.mobKey) : null;
-          // Only non-boss mobs should collide with props
-          return cfg?.tier !== 'boss';
+          const flags = enemy?.collisionFlags ?? resolveMobCollisionFlags(enemy?.mobKey);
+          return flags.props !== false;
         }
       );
     }
@@ -296,13 +297,29 @@ export class GameScene extends Phaser.Scene {
     if (this.mapCollisionLayers?.length) {
       this.mapCollisionLayers.forEach((layer) => {
         this.physics.add.collider(this.hero.sprite, layer);
-        this.physics.add.collider(enemyGroup, layer);
+        this.physics.add.collider(
+          enemyGroup,
+          layer,
+          /* collideCallback */ undefined,
+          /* processCallback */ (enemy) => {
+            const flags = enemy?.collisionFlags ?? resolveMobCollisionFlags(enemy?.mobKey);
+            return flags.mapLayers !== false;
+          }
+        );
       });
     }
 
     if (this.mapObjectColliders) {
       this.physics.add.collider(this.hero.sprite, this.mapObjectColliders);
-      this.physics.add.collider(enemyGroup, this.mapObjectColliders);
+      this.physics.add.collider(
+        enemyGroup,
+        this.mapObjectColliders,
+        /* collideCallback */ undefined,
+        /* processCallback */ (enemy) => {
+          const flags = enemy?.collisionFlags ?? resolveMobCollisionFlags(enemy?.mobKey);
+          return flags.mapObjects !== false;
+        }
+      );
     }
 
     this.physics.add.overlap(

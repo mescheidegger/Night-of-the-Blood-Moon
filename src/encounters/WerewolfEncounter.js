@@ -90,10 +90,29 @@ export class WerewolfEncounter {
     const pool = this.scene.enemyPools?.getPool?.(this.mobKey);
     if (!pool?.get) return;
 
-    // pick a point around the hero
-    const ang = Phaser.Math.FloatBetween(0, Math.PI * 2);
-    const x = hero.x + Math.cos(ang) * radius;
-    const y = hero.y + Math.sin(ang) * radius;
+    // On bounded maps, try to use the reserved boss spawn group first.
+    let spawnPoint = null;
+    if (this.scene.mapRuntime?.isBounded?.()) {
+      spawnPoint = this.scene.spawnDirector?.getSpawnPoint?.({
+        heroSprite: hero,
+        spawnKey: 'boss',
+        requireKey: true,
+      });
+    }
+
+    let x;
+    let y;
+    if (spawnPoint) {
+      // Use the keyed boss spawn point directly.
+      x = spawnPoint.x;
+      y = spawnPoint.y;
+    } else {
+      // Fall back to the legacy ring spawn for infinite/bounded maps without a boss key.
+      // pick a point around the hero
+      const ang = Phaser.Math.FloatBetween(0, Math.PI * 2);
+      x = hero.x + Math.cos(ang) * radius;
+      y = hero.y + Math.sin(ang) * radius;
+    }
 
     // grab a pooled Enemy
     const enemy = pool.get(x, y);
