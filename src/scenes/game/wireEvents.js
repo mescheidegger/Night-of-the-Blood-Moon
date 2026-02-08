@@ -57,7 +57,10 @@ export function wireGameSceneEvents(scene) {
   const onToggleMapDebug = () => {
     scene.mapDebugOverlay?.toggle?.();
   };
-  scene.input.keyboard.on('keydown-B', onToggleMapDebug);
+  const hasMapDebugOverlay = Boolean(scene.mapDebugOverlay);
+  if (hasMapDebugOverlay) {
+    scene.input.keyboard.on('keydown-B', onToggleMapDebug);
+  }
 
   // Return a disposer so GameScene shutdown can remove listeners in one place.
   return () => {
@@ -68,6 +71,8 @@ export function wireGameSceneEvents(scene) {
 
     scene.input.keyboard?.off('keydown-ESC', onPauseKey);
     scene.input.keyboard?.off('keydown-P', onPauseKey);
-    scene.input.keyboard?.off('keydown-B', onToggleMapDebug);
+    if (hasMapDebugOverlay) {
+      scene.input.keyboard?.off('keydown-B', onToggleMapDebug);
+    }
   };
 }

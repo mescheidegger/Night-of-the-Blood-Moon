@@ -195,7 +195,8 @@ export class GameScene extends Phaser.Scene {
       this.cameras.main.setBounds(worldBounds.x, worldBounds.y, worldBounds.width, worldBounds.height);
     }
 
-    this.mapDebugOverlay = new MapDebugOverlay(this);
+    const isDevMode = import.meta.env.DEV && DEV_RUN?.enabled === true;
+    this.mapDebugOverlay = isDevMode ? new MapDebugOverlay(this) : null;
 
     // Screen-space overlay that handles the blood moon pulse animation.
     this.bloodMoon = new BloodMoonOverlay(this, { depth: this.mapRender?.overlayDepth });
