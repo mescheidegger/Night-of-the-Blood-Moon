@@ -78,6 +78,18 @@ export const MapRegistry = {
         InvisibleWalls: true,
       }
     },
+    render: {
+      actorBaseDepth: 200,
+      layerDepths: {
+        Grass: 0,
+        Collision: 5,
+        Stairs: 190,
+        Walls: 250,
+        Props: 260,
+        Plants: 320,
+      },
+      hideCollisionLayers: true,
+    },
     spawns: {
       layer: 'Spawns',
       keys: {

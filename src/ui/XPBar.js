@@ -9,7 +9,7 @@ export class XPBar {
    * @param {number} options.width - Width of the XP bar.
    * @param {number} options.height - Height of the XP bar.
    */
-  constructor(scene, { width = 320, height = 16 } = {}) {
+  constructor(scene, { width = 320, height = 16, depth = 20 } = {}) {
     this.scene = scene;
     this.width = width;
     this.height = height;
@@ -19,7 +19,7 @@ export class XPBar {
     this.container = scene.add
       .container(scene.scale.width / 2, 32)
       .setScrollFactor(0) // Do not move with camera
-      .setDepth(20); // Render above gameplay elements
+      .setDepth(depth); // Render above gameplay elements
 
     // Inner "fill" area is slightly smaller to leave border padding.
     const innerWidth = Math.max(0, width - 8);

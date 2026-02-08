@@ -41,6 +41,7 @@ export class EndRunMenu {
     title = 'YOU DIED',
     subtitle = 'Night of the Blood Moon',
     primaryLabel = 'Retry',
+    depthBase = 0,
     onPrimary,
     onRetry,
     onMainMenu
@@ -50,6 +51,7 @@ export class EndRunMenu {
     this.title = title;
     this.subtitle = subtitle;
     this.primaryLabel = primaryLabel;
+    this.depthBase = depthBase;
     this.onPrimary = onPrimary ?? onRetry;
     this.onMainMenu = onMainMenu;
     this.destroyed = false;
@@ -67,6 +69,9 @@ export class EndRunMenu {
     const { width, height } = this.scene.scale;
     const centerX = width * 0.5;
     const centerY = height * 0.5;
+    const baseDepth = Number.isFinite(this.depthBase) ? this.depthBase : 0;
+    const panelDepth = baseDepth + PANEL_DEPTH;
+    this.panelDepth = panelDepth;
 
     // Backdrop swallows pointer input so gameplay never receives clicks.  We
     // intentionally avoid hooking events here; its sole job is to block
@@ -75,11 +80,11 @@ export class EndRunMenu {
     this.backdrop = this.scene.add.rectangle(0, 0, width, height, 0x050208, 0.78)
       .setOrigin(0)
       .setScrollFactor(0)
-      .setDepth(PANEL_DEPTH)
+      .setDepth(panelDepth)
       .setInteractive({ cursor: 'default' });
 
     this.panel = this.scene.add.container(centerX, centerY)
-      .setDepth(PANEL_DEPTH + 1)
+      .setDepth(panelDepth + 1)
       .setScrollFactor(0)
       .setAlpha(0);
 
@@ -244,7 +249,7 @@ export class EndRunMenu {
   createButton(label, y, handler) {
     const container = this.scene.add.container(0, y)
       .setScrollFactor(0)
-      .setDepth(PANEL_DEPTH + 2)
+      .setDepth((this.panelDepth ?? PANEL_DEPTH) + 2)
       .setSize(BUTTON_WIDTH, BUTTON_HEIGHT)
       .setInteractive({ useHandCursor: true });
 

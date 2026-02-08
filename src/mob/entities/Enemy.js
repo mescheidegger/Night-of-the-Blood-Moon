@@ -109,7 +109,9 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
     };
 
     // Render depth from config so bosses can be layered above FX later.
-    this.setDepth(config.depth ?? this.depth ?? 2);
+    const actorBaseDepth = this.scene?.mapRender?.actorBaseDepth ?? 0;
+    const depthOffset = config.depth ?? this.depth ?? 2;
+    this.setDepth(actorBaseDepth + depthOffset);
 
     // Normalise the physics body to the mob definition.
     applyBodyConfig(this, config);

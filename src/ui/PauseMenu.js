@@ -11,11 +11,12 @@ export class PauseMenu {
    * @param {Phaser.Scene} scene
    * @param {{ onResume?: Function, onMainMenu?: Function, onSettings?: Function }} config
    */
-  constructor(scene, { onResume, onMainMenu, onSettings } = {}) {
+  constructor(scene, { onResume, onMainMenu, onSettings, depthBase = 0 } = {}) {
     this.scene = scene;
     this.onResume = onResume;
     this.onMainMenu = onMainMenu;
     this.onSettings = onSettings;
+    this.depthBase = depthBase;
     this.destroyed = false;
     this.keyListeners = [];
 
@@ -27,15 +28,17 @@ export class PauseMenu {
     const { width, height } = this.scene.scale;
     const centerX = width * 0.5;
     const centerY = height * 0.5;
+    const baseDepth = Number.isFinite(this.depthBase) ? this.depthBase : 0;
+    const panelDepth = baseDepth + PANEL_DEPTH;
 
     this.backdrop = this.scene.add.rectangle(0, 0, width, height, 0x050208, 0.5)
       .setOrigin(0)
       .setScrollFactor(0)
-      .setDepth(PANEL_DEPTH)
+      .setDepth(panelDepth)
       .setInteractive({ cursor: 'default' });
 
     this.panel = this.scene.add.container(centerX, centerY)
-      .setDepth(PANEL_DEPTH + 1)
+      .setDepth(panelDepth + 1)
       .setScrollFactor(0)
       .setAlpha(0);
 
@@ -70,9 +73,9 @@ export class PauseMenu {
     placeText(subtitle, 16);
 
     // Now place buttons below subtitle
-    const resumeButton = this._createButton('Resume', 0, () => this.handleResume());
-    const settingsButton = this._createButton('Settings', 0, () => this.handleSettings());
-    const menuButton = this._createButton('Main Menu', 0, () => this.handleMainMenu());
+    const resumeButton = this._createButton('Resume', 0, () => this.handleResume(), panelDepth);
+    const settingsButton = this._createButton('Settings', 0, () => this.handleSettings(), panelDepth);
+    const menuButton = this._createButton('Main Menu', 0, () => this.handleMainMenu(), panelDepth);
 
     // First button position
     const buttonTopMargin = 8; // gap between subtitle and first button
@@ -99,10 +102,10 @@ export class PauseMenu {
   }
 
   /** Handle _createButton so this system stays coordinated. */
-  _createButton(label, y, handler) {
+  _createButton(label, y, handler, panelDepth) {
     const container = this.scene.add.container(0, y)
       .setScrollFactor(0)
-      .setDepth(PANEL_DEPTH + 2)
+      .setDepth(panelDepth + 2)
       .setSize(BUTTON_WIDTH, BUTTON_HEIGHT)
       .setInteractive({ useHandCursor: true });
 

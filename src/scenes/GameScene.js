@@ -47,6 +47,7 @@ import { cleanupGameScene } from './game/cleanup.js';
 import { applyDevRun } from './game/applyDevRun.js';
 import { updateArenaLock } from './game/arenaLock.js';
 import { stepSimulation } from './game/stepSimulation.js';
+import { applyMapRenderOrder, resolveMapRenderConfig } from './game/applyMapRenderOrder.js';
 
 /**
  * Main gameplay scene.
@@ -81,6 +82,7 @@ export class GameScene extends Phaser.Scene {
     this.pause = new PauseController(this);
     this._setupWorld();
     this._setupHero();
+    applyMapRenderOrder(this);
     this._setupSystems();
     this._setupWeapons();
     this._setupHUD();
@@ -106,6 +108,7 @@ export class GameScene extends Phaser.Scene {
     const mapKey = this.scene?.settings?.data?.mapKey ?? DEFAULT_MAP_KEY;
     this.mapKey = mapKey;
     this.mapConfig = MapRegistry[mapKey] ?? MapRegistry[DEFAULT_MAP_KEY];
+    this.mapRender = resolveMapRenderConfig(this.mapConfig);
     const mapType = this.mapConfig?.type ?? 'infinite';
     const propMode = this.mapConfig?.props?.mode ?? 'procedural';
 
@@ -189,7 +192,7 @@ export class GameScene extends Phaser.Scene {
     this.mapDebugOverlay = new MapDebugOverlay(this);
 
     // Screen-space overlay that handles the blood moon pulse animation.
-    this.bloodMoon = new BloodMoonOverlay(this);
+    this.bloodMoon = new BloodMoonOverlay(this, { depth: this.mapRender?.overlayDepth });
   }
 
   /** Handle _setupHero so this system stays coordinated. */
@@ -226,6 +229,18 @@ export class GameScene extends Phaser.Scene {
       y: spawnPoint?.y ?? 0,
       onFacingChange: (dir) => { this.playerFacing = dir; }
     });
+
+    const actorBaseDepth = this.mapRender?.actorBaseDepth ?? 0;
+    const heroDepthOffset = heroEntry?.depth?.sprite ?? 2;
+    const heroDepth = actorBaseDepth + heroDepthOffset;
+    this.hero.sprite?.setDepth?.(heroDepth);
+    const glowDepth = actorBaseDepth + (heroEntry?.cosmetics?.glowDepth ?? (heroDepthOffset - 1));
+    this.hero.glow?.setDepth?.(glowDepth);
+    if (this.hero.healthBar?.background && this.hero.healthBar?.fill) {
+      this.hero.healthBar.background.setDepth(heroDepth + 2);
+      this.hero.healthBar.fill.setDepth(heroDepth + 3);
+    }
+
     // Bounded maps keep the hero from leaving the world rectangle.
     if (this.mapRuntime?.isBounded?.()) {
       this.hero.sprite?.setCollideWorldBounds?.(true);
@@ -437,7 +452,8 @@ export class GameScene extends Phaser.Scene {
       events: this.events,
       initialLoadout: this.weaponManager.getLoadout(),
       initialPassives: this.passiveManager?.getLoadout?.(),
-      onPauseRequested: () => this.togglePauseMenu()
+      onPauseRequested: () => this.togglePauseMenu(),
+      depthBase: this.mapRender?.uiBaseDepth
     });
 
     this.hero?.controller?.setMoveVectorProvider(() => this.hud?.getMoveVector?.() ?? { x: 0, y: 0 });
@@ -513,6 +529,7 @@ export class GameScene extends Phaser.Scene {
       stats,
       title,
       primaryLabel,
+      depthBase: this.mapRender?.uiBaseDepth,
       onPrimary: () => {
         this.time.timeScale = 1;
         this.endRunMenu?.destroy();

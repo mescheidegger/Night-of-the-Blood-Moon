@@ -6,7 +6,7 @@ import Phaser from 'phaser';
  * GameScene focused on orchestration.
  */
 export class BloodMoonOverlay {
-  constructor(scene) {
+  constructor(scene, { depth = 10 } = {}) {
     this.scene = scene;
     this.elapsed = 0;
 
@@ -14,7 +14,7 @@ export class BloodMoonOverlay {
     // the camera shakes or zooms. Scroll factor 0 anchors it to the screen.
     this.overlay = scene.add.rectangle(0, 0, 4000, 4000, 0x8a143a, 0)
       .setScrollFactor(0)
-      .setDepth(10)
+      .setDepth(depth)
       .setBlendMode(Phaser.BlendModes.MULTIPLY);
   }
 

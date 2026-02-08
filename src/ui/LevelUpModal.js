@@ -13,7 +13,7 @@ export class LevelUpModal {
    * Displays a blocking "Level Up" modal that pauses gameplay visually and
    * lets the player choose between weapon unlocks or a health restore.
    */
-  constructor(scene, { level = 1, choices = null, onSelect, onClose } = {}) {
+  constructor(scene, { level = 1, choices = null, onSelect, onClose, depthBase = 0 } = {}) {
     this.scene = scene;
     this.level = level;
     this.onSelect = onSelect;
@@ -37,20 +37,22 @@ export class LevelUpModal {
     ];
 
     const { width, height } = scene.scale;
+    const baseDepth = Number.isFinite(depthBase) ? depthBase : 0;
+    const panelDepth = baseDepth + PANEL_DEPTH;
 
     this.backdrop = scene.add.rectangle(0, 0, width, height, 0x050208, 0.65)
       .setOrigin(0)
       .setScrollFactor(0)
-      .setDepth(PANEL_DEPTH)
+      .setDepth(panelDepth)
       .setInteractive({ cursor: 'default' });
 
     this.backdrop.disableInteractive(); // <- important: let clicks pass through
 
     this.container = scene.add.container(width / 2, height / 2)
       .setScrollFactor(0)
-      .setDepth(PANEL_DEPTH + 1);
+      .setDepth(panelDepth + 1);
 
-    this.container.setDepth(PANEL_DEPTH + 1);
+    this.container.setDepth(panelDepth + 1);
 
     this._buildPanel();
 

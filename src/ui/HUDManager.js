@@ -33,6 +33,7 @@ export class HUDManager {
       onPauseRequested,
       startTime = null,
       showDebug = DEV_RUN?.enabled === true,
+      depthBase = 0,
     } = {}
   ) {
     this.scene = scene;
@@ -46,6 +47,7 @@ export class HUDManager {
     // Run stats tracker (authoritative snapshot for HUD + menus)
     // -----------------------------
     this.runStats = new RunStatsTracker(scene, { events: this.events, startTime });
+    const uiDepthBase = Number.isFinite(depthBase) ? depthBase : 0;
 
     // -----------------------------
     // Bars
@@ -55,6 +57,7 @@ export class HUDManager {
       cooldownColor: 0xff3b3b,
       cooldownAlpha: 0.35,
       cooldownBlend: Phaser.BlendModes.MULTIPLY,
+      depth: uiDepthBase + 30,
     });
 
     if (Array.isArray(initialLoadout) && initialLoadout.length > 0) {
@@ -63,7 +66,8 @@ export class HUDManager {
 
     this.passiveBar = new PassiveLoadoutBar(scene, {
       events: this.events,
-      getStackCount: (key) => this.scene.passiveManager?.getStackCount?.(key) ?? 0
+      getStackCount: (key) => this.scene.passiveManager?.getStackCount?.(key) ?? 0,
+      depth: uiDepthBase + 30,
     });
 
     this.passiveBar.render(initialPassives ?? []);
@@ -71,14 +75,14 @@ export class HUDManager {
     // -----------------------------
     // Player-facing HUD (new)
     // -----------------------------
-    this.playerHUD = new PlayerHUD(scene, { depth: 70 });
+    this.playerHUD = new PlayerHUD(scene, { depth: uiDepthBase + 70 });
     this.playerHUD.setVisible(true);
 
     // -----------------------------
     // Debug overlay (existing, kept separate)
     // -----------------------------
     this.isDebugVisible = !!showDebug;
-    this.debugOverlay = new DebugOverlay(scene, { depth: 75 });
+    this.debugOverlay = new DebugOverlay(scene, { depth: uiDepthBase + 75 });
     this.debugOverlay.setVisible(this.isDebugVisible);
 
     // -----------------------------
@@ -90,10 +94,10 @@ export class HUDManager {
 
     this._createTouchControls = () => {
       if (!this.joystick) {
-        this.joystick = new VirtualJoystick(scene, { depth: 60, radius: 52 });
+        this.joystick = new VirtualJoystick(scene, { depth: uiDepthBase + 60, radius: 52 });
       }
       if (!this.pauseButton && typeof this.onPauseRequested === 'function') {
-        this.pauseButton = new PauseButton(scene, { depth: 65, size: 44, onPause: this.onPauseRequested });
+        this.pauseButton = new PauseButton(scene, { depth: uiDepthBase + 65, size: 44, onPause: this.onPauseRequested });
       }
     };
 

@@ -252,6 +252,7 @@ export class PauseController {
     this.acquire('pauseMenu');
 
     scene.pauseMenu = new PauseMenu(scene, {
+      depthBase: scene.mapRender?.uiBaseDepth ?? 0,
       onResume: () => this.closeMenu(),
       onMainMenu: () => {
         this.closeMenu();
@@ -278,6 +279,7 @@ export class PauseController {
     // Settings is modal UI that should not allow the pause hotkey to reopen menus.
     scene.settingsMenu = new SettingsMenu(scene, {
       soundManager: scene.soundManager,
+      depthBase: scene.mapRender?.uiBaseDepth ?? 0,
       onClose: () => {
         scene.settingsMenu?.destroy();
         scene.settingsMenu = null;

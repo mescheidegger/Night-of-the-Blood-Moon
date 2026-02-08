@@ -9,10 +9,11 @@ const BUTTON_SPACING = 16;
 
 export class SettingsMenu {
   /** Initialize SettingsMenu state so runtime dependencies are ready. */
-  constructor(scene, { soundManager, onClose } = {}) {
+  constructor(scene, { soundManager, onClose, depthBase = 0 } = {}) {
     this.scene = scene;
     this.soundManager = soundManager;
     this.onClose = onClose;
+    this.depthBase = depthBase;
     this.destroyed = false;
     this.keyListeners = [];
 
@@ -27,15 +28,17 @@ export class SettingsMenu {
     const { width, height } = this.scene.scale;
     const centerX = width * 0.5;
     const centerY = height * 0.5;
+    const baseDepth = Number.isFinite(this.depthBase) ? this.depthBase : 0;
+    const panelDepth = baseDepth + PANEL_DEPTH;
 
     this.backdrop = this.scene.add.rectangle(0, 0, width, height, 0x050208, 0.55)
       .setOrigin(0)
       .setScrollFactor(0)
-      .setDepth(PANEL_DEPTH)
+      .setDepth(panelDepth)
       .setInteractive({ cursor: 'default' });
 
     this.panel = this.scene.add.container(centerX, centerY)
-      .setDepth(PANEL_DEPTH + 1)
+      .setDepth(panelDepth + 1)
       .setScrollFactor(0)
       .setAlpha(0);
 
@@ -64,7 +67,8 @@ export class SettingsMenu {
       y: sfxRowY,
       labelText: this._formatSfxLabel(),
       onMinus: () => this._bumpSfx(-0.1),
-      onPlus: () => this._bumpSfx(0.1)
+      onPlus: () => this._bumpSfx(0.1),
+      panelDepth
     });
     const { container: sfxRow, label: sfxLabel } = sfxRowParts;
     this.sfxLabel = sfxLabel;
@@ -74,7 +78,8 @@ export class SettingsMenu {
       y: musicRowY,
       labelText: this._formatMusicLabel(),
       onMinus: () => this._bumpMusic(-0.1),
-      onPlus: () => this._bumpMusic(0.1)
+      onPlus: () => this._bumpMusic(0.1),
+      panelDepth
     });
     const { container: musicRow, label: musicLabel } = musicRowParts;
     this.musicLabel = musicLabel;
@@ -89,7 +94,10 @@ export class SettingsMenu {
       'Back (Esc)',
       0,
       backButtonY,
-      () => this.close()
+      () => this.close(),
+      BUTTON_WIDTH,
+      BUTTON_HEIGHT,
+      panelDepth
     );
 
     this.panel.add([panelBg, title, sfxRow, musicRow, backButton]);
@@ -108,10 +116,10 @@ export class SettingsMenu {
 
 
   /** Handle _createButton so this system stays coordinated. */
-  _createButton(label, x, y, handler, widthOverride = BUTTON_WIDTH, heightOverride = BUTTON_HEIGHT) {
+  _createButton(label, x, y, handler, widthOverride = BUTTON_WIDTH, heightOverride = BUTTON_HEIGHT, panelDepth = PANEL_DEPTH) {
     const container = this.scene.add.container(x, y)
       .setScrollFactor(0)
-      .setDepth(PANEL_DEPTH + 2)
+      .setDepth(panelDepth + 2)
       .setSize(widthOverride, heightOverride)
       .setInteractive({ useHandCursor: true });
 
@@ -148,8 +156,8 @@ export class SettingsMenu {
   }
 
   /** Handle _createVolumeRow so this system stays coordinated. */
-  _createVolumeRow({ y, labelText, onMinus, onPlus }) {
-    const container = this.scene.add.container(0, y).setDepth(PANEL_DEPTH + 2);
+  _createVolumeRow({ y, labelText, onMinus, onPlus, panelDepth = PANEL_DEPTH }) {
+    const container = this.scene.add.container(0, y).setDepth(panelDepth + 2);
 
     const label = this.scene.add.text(0, 0, labelText, {
       font: '18px monospace',
@@ -167,7 +175,8 @@ export class SettingsMenu {
       0,
       onMinus,
       SMALL_WIDTH,
-      SMALL_HEIGHT
+      SMALL_HEIGHT,
+      panelDepth
     );
 
     const plusButton = this._createButton(
@@ -176,7 +185,8 @@ export class SettingsMenu {
       0,
       onPlus,
       SMALL_WIDTH,
-      SMALL_HEIGHT
+      SMALL_HEIGHT,
+      panelDepth
     );
 
     container.add([label, minusButton, plusButton]);

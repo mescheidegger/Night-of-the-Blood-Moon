@@ -21,7 +21,8 @@ export class LevelUpFlow {
     this.scene.levelSystem = this.levelSystem;
 
     // HUD element that mirrors progression along the bottom of the screen.
-    this.xpBar = new XPBar(scene);
+    const uiDepthBase = scene?.mapRender?.uiBaseDepth ?? 0;
+    this.xpBar = new XPBar(scene, { depth: uiDepthBase + 20 });
 
     this._pendingLevelUps = 0;
     this._modalActive = false;
@@ -138,6 +139,7 @@ export class LevelUpFlow {
     this.levelUpModal = new LevelUpModal(this.scene, {
       level,
       choices,
+      depthBase: this.scene?.mapRender?.uiBaseDepth ?? 0,
       onSelect: (choice) => this._handleChoice(choice)
     });
   }
