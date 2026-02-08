@@ -117,7 +117,13 @@ export class GameScene extends Phaser.Scene {
     this.mapCollisionLayers = [];
     this.mapObjectColliders = null;
     this.mapObstacleRects = [];
-    this.mapSpawnPoints = { all: [], byName: {}, byKey: {}, layerNames: [] };
+    this.mapSpawnPoints = {
+      all: [],
+      byName: {},
+      byKey: {},
+      layerNames: [],
+      areas: { all: [], byName: {}, byKey: {}, layerNames: [] },
+    };
 
     // Bounded maps load a tilemap + colliders instead of infinite ground tiling.
     if (mapType === 'bounded') {

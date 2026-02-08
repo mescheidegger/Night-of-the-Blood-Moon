@@ -1,4 +1,5 @@
 import { resolveAttempt, resolveValue } from '../utils.js';
+import { resolveSpawnKey } from './spawnKey.js';
 import { getBodySpawnBuffer, resolveMobConfig } from '../../mob/MobRegistry.js';
 
 // Tracks per-scene cooldown timestamps for wall spawns keyed by mob type.
@@ -45,7 +46,7 @@ export function wallLine(ctx, mobKey, t, mobEntry = {}) {
   const wallConfig = mobEntry.wall ?? {};
   const baseAi = mobConfig.ai;
   const baseAiParams = mobConfig.aiParams;
-  const spawnKey = mobEntry?.spawn?.key ?? mobEntry?.spawn?.group;
+  const spawnKey = resolveSpawnKey(ctx, mobEntry);
   const spawnAnchor = spawnKey
     ? scene.spawnDirector?.getSpawnPoint?.({ heroSprite, attempts: 1, spawnKey })
     : null;

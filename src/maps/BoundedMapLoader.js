@@ -15,7 +15,13 @@ export class BoundedMapLoader {
         map: null,
         layersByName: {},
         objectLayersByName: {},
-        spawnPoints: { all: [], byName: {}, byKey: {}, layerNames: [] },
+        spawnPoints: {
+          all: [],
+          byName: {},
+          byKey: {},
+          layerNames: [],
+          areas: { all: [], byName: {}, byKey: {}, layerNames: [] },
+        },
         collisionLayers: [],
         objectColliderGroup: null,
         obstacleRects: [],
@@ -95,7 +101,13 @@ export class BoundedMapLoader {
 
   _extractSpawnPoints(objectLayersByName, spawnConfig) {
     if (!spawnConfig) {
-      return { all: [], byName: {}, byKey: {}, layerNames: [] };
+      return {
+        all: [],
+        byName: {},
+        byKey: {},
+        layerNames: [],
+        areas: { all: [], byName: {}, byKey: {}, layerNames: [] },
+      };
     }
 
     const layerNames = Array.isArray(spawnConfig?.layers)
@@ -103,7 +115,13 @@ export class BoundedMapLoader {
       : (spawnConfig?.layer ? [spawnConfig.layer] : []);
 
     if (!layerNames.length) {
-      return { all: [], byName: {}, byKey: {}, layerNames: [] };
+      return {
+        all: [],
+        byName: {},
+        byKey: {},
+        layerNames: [],
+        areas: { all: [], byName: {}, byKey: {}, layerNames: [] },
+      };
     }
 
     const all = [];
@@ -125,6 +143,105 @@ export class BoundedMapLoader {
       });
     });
 
+    const { byKey } = this._buildSpawnGroups({ all, byName }, spawnConfig);
+    const areas = this._extractSpawnAreas(objectLayersByName, spawnConfig, layerNames);
+
+    return {
+      all,
+      byName,
+      byKey,
+      layerNames,
+      areas,
+    };
+  }
+
+  _extractPointObjects(layerData, layerName) {
+    const objects = Array.isArray(layerData?.objects) ? layerData.objects : [];
+
+    return objects
+      .filter((obj) => obj && (obj.point || (Number(obj.width) === 0 && Number(obj.height) === 0)))
+      .map((obj) => {
+        const properties = {};
+        (obj.properties ?? []).forEach((property) => {
+          if (!property?.name) return;
+          properties[property.name] = property.value;
+        });
+
+        return {
+          id: obj.id,
+          name: obj.name ?? null,
+          type: obj.type ?? null,
+          x: Number(obj.x) || 0,
+          y: Number(obj.y) || 0,
+          properties,
+          layerName,
+        };
+      });
+  }
+
+  _extractSpawnAreas(objectLayersByName, spawnConfig, layerNames) {
+    const all = [];
+    const byName = {};
+
+    layerNames.forEach((layerName) => {
+      const layerData = objectLayersByName?.[layerName];
+      if (!layerData) return;
+
+      const rects = this._extractRectObjects(layerData, layerName);
+      rects.forEach((rect) => {
+        all.push(rect);
+        if (rect.name) {
+          if (!byName[rect.name]) {
+            byName[rect.name] = [];
+          }
+          byName[rect.name].push(rect);
+        }
+      });
+    });
+
+    const { byKey } = this._buildSpawnGroups({ all, byName }, spawnConfig);
+
+    return {
+      all,
+      byName,
+      byKey,
+      layerNames,
+    };
+  }
+
+  _extractRectObjects(layerData, layerName) {
+    const objects = Array.isArray(layerData?.objects) ? layerData.objects : [];
+
+    return objects
+      .filter((obj) => {
+        if (!obj) return false;
+        if (obj.point) return false;
+        const width = Number(obj.width);
+        const height = Number(obj.height);
+        return Number.isFinite(width) && Number.isFinite(height) && width > 0 && height > 0;
+      })
+      .map((obj) => {
+        const properties = {};
+        (obj.properties ?? []).forEach((property) => {
+          if (!property?.name) return;
+          properties[property.name] = property.value;
+        });
+
+        return {
+          id: obj.id,
+          name: obj.name ?? null,
+          type: obj.type ?? null,
+          x: Number(obj.x) || 0,
+          y: Number(obj.y) || 0,
+          width: Number(obj.width) || 0,
+          height: Number(obj.height) || 0,
+          properties,
+          layerName,
+        };
+      });
+  }
+
+  _buildSpawnGroups({ all, byName }, spawnConfig) {
     const byKey = {};
     const keys = spawnConfig?.keys ?? {};
     Object.entries(keys).forEach(([key, name]) => {
@@ -185,36 +302,7 @@ export class BoundedMapLoader {
       }
     });
 
-    return {
-      all,
-      byName,
-      byKey,
-      layerNames,
-    };
-  }
-
-  _extractPointObjects(layerData, layerName) {
-    const objects = Array.isArray(layerData?.objects) ? layerData.objects : [];
-
-    return objects
-      .filter((obj) => obj && (obj.point || (Number(obj.width) === 0 && Number(obj.height) === 0)))
-      .map((obj) => {
-        const properties = {};
-        (obj.properties ?? []).forEach((property) => {
-          if (!property?.name) return;
-          properties[property.name] = property.value;
-        });
-
-        return {
-          id: obj.id,
-          name: obj.name ?? null,
-          type: obj.type ?? null,
-          x: Number(obj.x) || 0,
-          y: Number(obj.y) || 0,
-          properties,
-          layerName,
-        };
-      });
+    return { byKey };
   }
 
   _buildObjectColliders(objectLayersByName, objectLayerRules) {

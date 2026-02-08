@@ -1,4 +1,5 @@
 import { getBodySpawnBuffer, resolveMobConfig } from '../../mob/MobRegistry.js';
+import { resolveSpawnKey } from './spawnKey.js';
 
 /**
  * Spawns bosses (Evil Wizard, Werewolf, etc.) off-screen once their appearAt
@@ -82,12 +83,13 @@ export function bossSpawn(ctx, mobKey, t, mobEntry = {}) {
   const runtime = scene.mapRuntime;
   // Flag ensures boss spawn uses bounded sampling when the map is finite.
   const useBounded = runtime?.isBounded?.();
+  const spawnKey = resolveSpawnKey(ctx, mobEntry);
   const spawnPoint = useBounded
     ? scene.spawnDirector?.getSpawnPoint?.({
         heroSprite,
         margin: 64,
         attempts: 20,
-        spawnKey: mobEntry?.spawn?.key ?? mobEntry?.spawn?.group,
+        spawnKey,
       })
     : null;
   const angle = Math.random() * Math.PI * 2;

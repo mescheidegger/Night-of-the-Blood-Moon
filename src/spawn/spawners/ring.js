@@ -1,5 +1,6 @@
 import { getBodySpawnBuffer, resolveMobConfig } from '../../mob/MobRegistry.js';
 import { resolveAttempt } from '../utils.js';
+import { resolveSpawnKey } from './spawnKey.js';
 
 /**
  * Default ring-style spawner.
@@ -40,11 +41,12 @@ export function ring(ctx, mobKey, t, mobEntry = {}) {
     if (!enemyPools?.canSpawn?.(mobKey)) break;
 
     // Choose a random direction around the hero.
+    const spawnKey = resolveSpawnKey(ctx, mobEntry);
     const spawnPoint = scene.spawnDirector?.getSpawnPoint?.({
       heroSprite,
       radius,
       attempts: 12,
-      spawnKey: mobEntry?.spawn?.key ?? mobEntry?.spawn?.group,
+      spawnKey,
     })
       ?? { x: heroSprite.x, y: heroSprite.y };
     const x = spawnPoint.x;

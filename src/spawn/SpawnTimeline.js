@@ -41,6 +41,12 @@ const boneLegion = (mobKey, legion) => ({
   entry: { legion },
 });
 
+const areaFill = (mobKey, entry = {}) => ({
+  spawner: 'areaFill',
+  mobKey,
+  entry,
+});
+
 const bossSpawn = (mobKey, entry) => ({
   spawner: 'bossSpawn',
   mobKey,
@@ -548,8 +554,19 @@ export const SpawnTimelineDefault = [
 ];
 
 export const SpawnTimeline = SpawnTimelineDefault;
-// TODO: Replace with bounded-specific pacing once the graveyard timeline is authored.
-export const SpawnTimelineBoundedGraveyard = SpawnTimelineDefault;
+export const SpawnTimelineBoundedGraveyard = SpawnTimelineDefault.map((evt) => {
+  if (!Array.isArray(evt?.spawns) || evt.spawns.length === 0) {
+    return evt;
+  }
+  const spawns = evt.spawns.map((spawn) => {
+    if (!spawn) return spawn;
+    if (spawn.spawner === 'wallLine' || spawn.spawner === 'boneLegion') {
+      return areaFill(spawn.mobKey, spawn.entry);
+    }
+    return spawn;
+  });
+  return { ...evt, spawns };
+});
 export const DEFAULT_SPAWN_TIMELINE_KEY = 'default';
 export const SpawnTimelineRegistry = {
   [DEFAULT_SPAWN_TIMELINE_KEY]: SpawnTimelineDefault,

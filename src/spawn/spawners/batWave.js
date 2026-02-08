@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { getBodySpawnBuffer, resolveMobConfig } from '../../mob/MobRegistry.js';
 import { pickOne, resolveAttempt, resolveValue } from '../utils.js';
+import { resolveSpawnKey } from './spawnKey.js';
 
 /**
  * Custom spawner: emits one or more "bat waves" (formation lines) that travel
@@ -58,7 +59,7 @@ export function batWave(ctx, mobKey, t, mobEntry = {}) {
   let spawnedCount = 0;
 
   const runtime = scene.mapRuntime;
-  const spawnKey = mobEntry?.spawn?.key ?? mobEntry?.spawn?.group;
+  const spawnKey = resolveSpawnKey(ctx, mobEntry);
   // Bounded maps skip offscreen spawning and instead use arena-contained points.
   if (runtime?.isBounded?.()) {
     const totalCount = totalGroups * groupSize;

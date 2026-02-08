@@ -103,6 +103,7 @@ export const MapRegistry = {
       groups: {
         enemy: { prefix: 'enemy_spawn' },
         boss: { key: 'boss_spawn' },
+        timeline: { prefix: 'timeline_spawn' },
       },
       // Default to the enemy group when bounded spawns omit an explicit key.
       defaultEnemyKey: 'enemy',

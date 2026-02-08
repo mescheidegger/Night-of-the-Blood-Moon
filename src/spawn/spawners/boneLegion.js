@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { resolveAttempt, resolveValue } from '../utils.js';
 import { resolveMobConfig } from '../../mob/MobRegistry.js';
+import { resolveSpawnKey } from './spawnKey.js';
 
 // Tracks per-scene cooldown timestamps for legion spawns keyed by mob type.
 const lastLegionByScene = new WeakMap();
@@ -121,7 +122,7 @@ export function boneLegion(ctx, mobKey, t, mobEntry = {}) {
         { x: bounds.right - inset, y: bounds.bottom - inset },
       ];
     } else {
-      const spawnKey = mobEntry?.spawn?.key ?? mobEntry?.spawn?.group;
+      const spawnKey = resolveSpawnKey(ctx, mobEntry);
       const picked = scene.spawnDirector?.getSpawnPoint?.({
         heroSprite: scene.hero?.sprite ?? scene.player,
         margin: Math.max(24, resolvedRadius * 0.4),

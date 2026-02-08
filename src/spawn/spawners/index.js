@@ -3,9 +3,10 @@ import { bossSpawn } from './bossSpawn.js';
 import { ring } from './ring.js';
 import { boneLegion } from './boneLegion.js';
 import { wallLine } from './wallLine.js';
+import { areaFill } from './areaFill.js';
 
 // Re-export individual spawner functions for direct imports.
-export { ring, batWave, bossSpawn, wallLine, boneLegion };
+export { ring, batWave, bossSpawn, wallLine, boneLegion, areaFill };
 
 /**
  * SpawnerRegistry
@@ -27,4 +28,5 @@ export const SpawnerRegistry = {
   bossSpawn,
   boneLegion,
   wallLine,
+  areaFill,
 };

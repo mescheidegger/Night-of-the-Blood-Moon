@@ -214,11 +214,14 @@ export class SpawnDirector {
     // but we still expose both clocks for spawners/debugging.
     const tDesignSeconds = Number.isFinite(tDesign) ? tDesign : tRunSeconds;
 
+    const isBounded = this.scene?.mapRuntime?.isBounded?.();
     const ctx = {
       scene: this.scene,
       enemyPools: this.enemyPools,
       heroSprite,
       modeKey: null,
+      spawnKeyDefault: isBounded ? 'timeline' : null,
+      spawnReason: 'timeline',
 
       // Helpful for spawners/debugging:
       tRun: tRunSeconds,
@@ -635,6 +638,7 @@ export class SpawnDirector {
     // Only bounded maps should use grouped spawn points by default.
     const isBounded = runtime?.isBounded?.();
     let resolvedKey = spawnKey ?? spawnGroup;
+    const spawnAreas = spawnPoints?.areas;
 
     if (!resolvedKey && isBounded) {
       // When no explicit key is provided, fall back to the configured enemy group.
@@ -647,11 +651,21 @@ export class SpawnDirector {
     const keyedPoints = resolvedKey
       ? (spawnPoints?.byKey?.[resolvedKey] ?? spawnPoints?.byName?.[resolvedKey])
       : null;
+    const keyedAreas = resolvedKey && isBounded
+      ? (spawnAreas?.byKey?.[resolvedKey] ?? spawnAreas?.byName?.[resolvedKey])
+      : null;
 
     if (keyedPoints?.length) {
       const point = Phaser.Utils.Array.GetRandom(keyedPoints);
       if (point) {
         return { x: point.x, y: point.y };
+      }
+    }
+
+    if (keyedAreas?.length) {
+      const areaPoint = this._sampleSpawnAreaPoint(keyedAreas, attempts);
+      if (areaPoint) {
+        return areaPoint;
       }
     }
 
@@ -673,7 +687,8 @@ export class SpawnDirector {
       for (let i = 0; i < attempts; i += 1) {
         const x = Phaser.Math.FloatBetween(minX, maxX);
         const y = Phaser.Math.FloatBetween(minY, maxY);
-        if (this.scene?.mapQuery?.isWalkableWorldXY?.(x, y)) {
+        const mapQuery = this.scene?.mapQuery;
+        if (!mapQuery || mapQuery.isWalkableWorldXY(x, y)) {
           return { x, y };
         }
       }
@@ -699,6 +714,49 @@ export class SpawnDirector {
     }
 
     return { x: heroSprite?.x ?? 0, y: heroSprite?.y ?? 0 };
+  }
+
+  _sampleSpawnAreaPoint(areas, attempts = 12) {
+    if (!Array.isArray(areas) || areas.length === 0) return null;
+
+    const validAreas = areas.filter((area) => {
+      const width = Number(area?.width);
+      const height = Number(area?.height);
+      return Number.isFinite(area?.x)
+        && Number.isFinite(area?.y)
+        && Number.isFinite(width)
+        && Number.isFinite(height)
+        && width > 0
+        && height > 0;
+    });
+
+    if (!validAreas.length) return null;
+
+    const totalWeight = validAreas.reduce((sum, area) => sum + area.width * area.height, 0);
+    if (!Number.isFinite(totalWeight) || totalWeight <= 0) return null;
+
+    const pickArea = () => {
+      let roll = Math.random() * totalWeight;
+      for (const area of validAreas) {
+        roll -= area.width * area.height;
+        if (roll <= 0) return area;
+      }
+      return validAreas[validAreas.length - 1];
+    };
+
+    for (let i = 0; i < attempts; i += 1) {
+      const area = pickArea();
+      if (!area) return null;
+
+      const x = Phaser.Math.FloatBetween(area.x, area.x + area.width);
+      const y = Phaser.Math.FloatBetween(area.y, area.y + area.height);
+      const mapQuery = this.scene?.mapQuery;
+      if (!mapQuery || mapQuery.isWalkableWorldXY(x, y)) {
+        return { x, y };
+      }
+    }
+
+    return null;
   }
 
   isPointBlocked(x, y) {
