@@ -39,7 +39,7 @@ export class EndRunMenu {
   constructor(scene, {
     stats = {},
     title = 'YOU DIED',
-    subtitle = 'Night of the Crimson Moon',
+    subtitle = 'Night of the Endless Moon',
     primaryLabel = 'Retry',
     depthBase = 0,
     onPrimary,

@@ -13,7 +13,7 @@ export const buildLoadingUI = (scene) => {
 
   // Title text: same palette + stroke as menu title
   const titleText = scene.add
-    .text(0, 0, 'NIGHT OF THE\nCRIMSON MOON', {
+    .text(0, 0, 'NIGHT OF THE\nENDLESS MOON', {
       fontFamily: 'monospace',
       fontSize: '40px',
       align: 'center',

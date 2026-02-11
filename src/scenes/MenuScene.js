@@ -82,7 +82,7 @@ export class MenuScene extends Phaser.Scene {
 
     // ------- Title -------
     const title = this.add.text(this.scale.width / 2, this.scale.height * 0.25,
-      'NIGHT OF THE\nCRIMSON MOON',
+      'NIGHT OF THE\nENDLESS MOON',
       {
         fontFamily: 'monospace',
         fontSize: '48px',
@@ -165,7 +165,7 @@ export class MenuScene extends Phaser.Scene {
       }
       this._openModal('About', [
         'When the blood moon rises, the dead answer its call.',
-        'Night of the Crimson Moon is a dark-fantasy survival game set on a cursed battlefield of graves and ruin.',
+        'Night of the Endless Moon is a dark-fantasy survival game set on a cursed battlefield of graves and ruin.',
         'Fight through relentless hordes, collect blue shards to grow stronger, and forge a build powerful enough to last until dawn.',
         'If you survive the night, a final boss awaits.',
         '',
