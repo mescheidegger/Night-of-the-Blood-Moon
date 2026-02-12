@@ -1,5 +1,7 @@
 import { CONFIG } from '../config/gameConfig.js';
+import { LEVEL_UP } from '../config/gameConfig.js';
 import { PassiveRegistry, isValidPassive } from './PassiveRegistry.js';
+import { canGrantNextStack } from './passiveStackGate.js';
 
 /**
  * Clamp requested stack counts to each passive's max so upgrades stay within limits.
@@ -113,11 +115,25 @@ export class PassiveManager {
   /**
    * Add a passive stack if possible and emit change events.
    */
-  addPassive(key) {
+  addPassive(key, options = {}) {
     if (!isValidPassive(key)) return false;
     if (this.whitelist.size > 0 && !this.whitelist.has(key)) return false;
 
     const currentCount = this.stackCounts.get(key) ?? 0;
+
+    const bypassStackGate = options?.bypassStackLevelGate === true;
+    const shouldEnforceStackGate =
+      (LEVEL_UP?.enforcePassiveStackLevelGate ?? true) && !bypassStackGate;
+    if (shouldEnforceStackGate) {
+      const currentLevel = Number(this.scene?.levelSystem?.level ?? 1);
+      const canGrant = canGrantNextStack({
+        level: currentLevel,
+        currentCount,
+        config: LEVEL_UP
+      });
+      if (!canGrant) return false;
+    }
+
     const nextCount = clampStacks(key, currentCount + 1);
     if (nextCount === currentCount) return false;
 

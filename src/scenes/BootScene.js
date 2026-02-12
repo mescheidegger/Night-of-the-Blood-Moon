@@ -143,6 +143,7 @@ export class BootScene extends Phaser.Scene {
     this.load.image('menumoon', '/assets/blood_moon_transparent.png');
 
     this.load.bitmapFont('damage', '/assets/fonts/damage.png', '/assets/fonts/damage.xml');
+    this.load.bitmapFont('pixeloperator', '/assets/fonts/pixeloperator8_0.png', '/assets/fonts/pixeloperator8.fnt');
 
     // --- Passive icons: now packed into a single texture atlas
     this.load.atlas(

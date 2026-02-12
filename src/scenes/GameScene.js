@@ -288,7 +288,7 @@ export class GameScene extends Phaser.Scene {
     this.enemies = this.enemyPools;
     this.dropManager = new DropManager(this);
     this.fx = new FXSystem(this);
-    this.damageNumbers = new DamageNumberSystem(this, { fontKey: 'damage', size: 16 });
+    this.damageNumbers = new DamageNumberSystem(this, { fontKey: 'pixeloperator', size: 16 });
 
     const propColliders = this.props?.getColliderGroup?.() ?? null;
     const enemyGroup = this.enemyPools.getAllGroup();

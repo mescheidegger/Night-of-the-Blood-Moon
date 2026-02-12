@@ -10,7 +10,7 @@ The project is a highly modular, registry-driven prototype built with
 Phaser 3 and Vite, focused on deterministic simulation, pooled entities,
 and data-driven gameplay systems.
 
-Play the game: https://www.nightofthebloodmoon.io/
+Play the game: https://www.endlessmoon.io/
 
 ------------------------------------------------------------------------
 

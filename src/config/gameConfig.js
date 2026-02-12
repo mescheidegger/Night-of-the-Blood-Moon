@@ -90,7 +90,21 @@ export const LEVEL_UP = Object.freeze({
 
   // Specific milestone levels where passives are always allowed,
   // even if they don't match the interval rule.
-  passiveMilestones: [7, 9, 10, 15, 20]
+  passiveMilestones: [7, 9, 10, 15, 20],
+
+  // --- Passive stack gating ---
+
+  // Require additional passive stacks to unlock every N levels globally.
+  // Example: 10 => stack 2 at level 10, stack 3 at level 20, stack 4 at 30.
+  passiveStackLevelInterval: 10,
+
+  // Stack index where level gating starts.
+  // 2 means the first stack is always allowed and stack 2+ are gated.
+  passiveStackGateStartAtStack: 2,
+
+  // Defensive runtime enforcement in PassiveManager.addPassive.
+  // Keep enabled for gameplay, disable temporarily for debug tooling if needed.
+  enforcePassiveStackLevelGate: true
 });
 
 // Dev-only helpers for fast-forwarding runs and booting with predefined loadouts.
@@ -99,14 +113,14 @@ export const DEV_RUN = Object.freeze({
   enabled: false,
 
   // jump to late game
-  startElapsedSeconds: 8.9 * 60,
+  startElapsedSeconds: 8 * 60,
 
   // optional
   startLevel: 50,
   snapXPToLevelFloor: true,
 
   // Option A: simple list (all get weaponLevelDefault)
-  weapons: ['spear', 'windsummon', 'xbow', 'spearthrow', 'spearcross', 'greenfire'],
+  weapons: ['spear', 'windsummon', 'xbow'], //, 'spearthrow', 'spearcross', 'greenfire'
   weaponLevelDefault: 8,
 
   // Passives: duplicates = stacks (your PassiveManager supports this)
@@ -117,8 +131,9 @@ export const DEV_RUN = Object.freeze({
     'vampiresKiss',
     'multiShot',
     'multiShot',
-    'bloodrush',
     'bloodwindtreads',
-    'reapersReach'
+    'shield',
+    'shield',
+    'shield'
   ]
 });
