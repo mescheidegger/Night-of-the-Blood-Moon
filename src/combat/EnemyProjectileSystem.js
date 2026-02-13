@@ -24,6 +24,7 @@ export class EnemyProjectileSystem {
    * @param {number} [opts.defaultDamage=1]                            Damage applied to the hero per hit.
    * @param {number} [opts.defaultSpeed=200]                           Default movement speed in px/s.
    * @param {number} [opts.defaultLifetimeMs=3000]                     Auto-despawn delay in ms.
+   * @param {boolean} [opts.ignoreHeroIFrames=false]                   If true, projectile damage bypasses hero i-frames.
    * @param {{width:number,height:number}} [opts.body={width:24,height:24}]  Physics body size (offset auto-centered).
    * @param {number} [opts.maxSize=24]                                 Max pooled projectile instances.
    */
@@ -34,6 +35,7 @@ export class EnemyProjectileSystem {
     defaultDamage = 1,
     defaultSpeed = 200,
     defaultLifetimeMs = 3000,
+    ignoreHeroIFrames = false,
     body = { width: 24, height: 24 },
     maxSize = 24,
   } = {}) {
@@ -43,6 +45,7 @@ export class EnemyProjectileSystem {
     this.defaultDamage = defaultDamage;
     this.defaultSpeed = defaultSpeed;
     this.defaultLifetimeMs = defaultLifetimeMs;
+    this.ignoreHeroIFrames = ignoreHeroIFrames;
     this.bodyConfig = body;
 
     // Single pooled group for all enemy projectiles.
@@ -257,7 +260,7 @@ export class EnemyProjectileSystem {
           }
 
           const explosionDamage = Math.max(1, Math.round(baseDamage * damageMult));
-          const tookDamage = heroHealth?.damage?.(explosionDamage);
+          const tookDamage = heroHealth?.damage?.(explosionDamage, { ignoreIFrames: this.ignoreHeroIFrames });
           if (tookDamage) {
             this.scene.cameras?.main?.shake?.(150, 0.004);
           }
@@ -379,7 +382,7 @@ export class EnemyProjectileSystem {
 
     if (!aoeCfg) {
       // Direct impact only
-      tookDamage = heroHealth?.damage?.(baseDamage);
+      tookDamage = heroHealth?.damage?.(baseDamage, { ignoreIFrames: this.ignoreHeroIFrames });
     } else {
       // Explosion-style: damage if hero is inside radius
       const heroSprite = this.scene.hero?.sprite;
@@ -400,7 +403,7 @@ export class EnemyProjectileSystem {
           }
 
           const explosionDamage = Math.max(1, Math.round(baseDamage * damageMult));
-          tookDamage = heroHealth?.damage?.(explosionDamage);
+          tookDamage = heroHealth?.damage?.(explosionDamage, { ignoreIFrames: this.ignoreHeroIFrames });
         }
       }
     }

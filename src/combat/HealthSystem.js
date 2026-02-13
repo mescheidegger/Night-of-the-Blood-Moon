@@ -90,11 +90,13 @@ export class HealthSystem {
    * Emits the hurt flash, updates listeners, and fires `entity:died` when
    * health reaches zero.  Returns `true` only when damage was actually dealt.
    */
-  damage(amount = 1) {
+  damage(amount = 1, options = {}) {
     if (this.dead || amount <= 0) return false;
 
+    const { ignoreIFrames = false } = options;
+
     const now = this.scene.time.now;
-    if (now < this.invincibleUntil) return false;
+    if (!ignoreIFrames && now < this.invincibleUntil) return false;
 
     this.invincibleUntil = now + this.iFrameDuration;
 

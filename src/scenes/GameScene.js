@@ -31,7 +31,7 @@ import { PassiveRegistry } from '../passives/PassiveRegistry.js';
 import { DamageNumberSystem } from '../combat/DamageNumberSystem.js';
 import { getOrCreateSoundManager } from '../audio/SoundManager.js';
 import { setupAudioSystem } from '../audio/AudioSystem.js';
-import { DEV_RUN } from '../config/gameConfig.js';
+import { CONFIG, DEV_RUN } from '../config/gameConfig.js';
 import { WerewolfEncounter } from '../encounters/WerewolfEncounter.js';
 import { DEFAULT_MAP_KEY, MapRegistry } from '../maps/MapRegistry.js';
 import { BoundedMapLoader } from '../maps/BoundedMapLoader.js';
@@ -388,6 +388,7 @@ export class GameScene extends Phaser.Scene {
       defaultDamage: 2,
       defaultSpeed: 220,
       defaultLifetimeMs: 4000,
+      ignoreHeroIFrames: CONFIG.COMBAT.ENEMY_PROJECTILES_IGNORE_IFRAMES,
       body: { width: 24, height: 24 },
       maxSize: 250,
     });

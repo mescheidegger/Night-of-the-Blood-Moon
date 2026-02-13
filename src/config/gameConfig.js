@@ -64,6 +64,11 @@ export const CONFIG = {
     playerDamageMult: 1.0,
     enemyHealthMult: 1.0,
     xpRateMult: 1.0
+  },
+
+  COMBAT: {
+    // If true, enemy projectile damage bypasses the hero's invulnerability frames.
+    ENEMY_PROJECTILES_IGNORE_IFRAMES: false
   }
 };
 
