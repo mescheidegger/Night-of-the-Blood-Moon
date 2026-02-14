@@ -5,15 +5,14 @@ import { weightedPick } from '../utils/WeightedTable.js';
  * DropSpawner
  *
  * Uses a drop table to spawn loot for a mob. This version prioritizes
- * weighted selection per roll. If weighted selection fails (e.g., all weights
- * are zero), it falls back to index-based entry for the current roll, then to
- * the first entry.
+ * weighted selection per roll by default. Tables can opt into sequential
+ * mode for scripted drop order when needed.
  */
 export class DropSpawner {
   /**
    * @param {Phaser.Scene} scene
    * @param {DropManager} dropManager - Responsible for pooled spawn.
-   * @param {Record<string, { rolls: number, entries: Array<object> }>} tables
+   * @param {Record<string, { rolls: number, selectionMode?: 'weighted' | 'sequential', entries: Array<object> }>} tables
    */
   constructor(scene, dropManager, tables) {
     this.scene = scene;
@@ -38,9 +37,18 @@ export class DropSpawner {
     const entries = table?.entries ?? [];
     if (!entries.length || rolls <= 0) return;
 
+    const selectionMode = table?.selectionMode ?? 'weighted';
+
     for (let i = 0; i < rolls; i++) {
-      // Prefer weighted selection FIRST so weights are honored.
-      let entry = weightedPick(entries /*, this.rng */) || entries[i] || entries[0];
+      let entry = null;
+
+      if (selectionMode === 'sequential') {
+        entry = entries[i] || entries[0] || null;
+      } else {
+        // Weighted mode: if all weights are <= 0, skip this roll.
+        entry = weightedPick(entries /*, this.rng */);
+      }
+
       if (!entry) continue;
 
       // Resolve final drop type: entry > caller overrides > default

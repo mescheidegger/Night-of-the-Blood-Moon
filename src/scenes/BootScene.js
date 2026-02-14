@@ -138,6 +138,10 @@ export class BootScene extends Phaser.Scene {
     this.load.image('largexpgem', '/assets/sprites/gems/largexpgem.png');
     this.load.image('minorhealth', '/assets/sprites/gems/minorhealth.png');
     this.load.image('majorhealth', '/assets/sprites/gems/majorhealth.png');
+    this.load.spritesheet('treasures_sheet', '/assets/sprites/gems/treasures.png', {
+      frameWidth: 32,
+      frameHeight: 32,
+    });
 
     // Menu moon (used in MenuScene; attached to boot UI once loaded)
     this.load.image('menumoon', '/assets/blood_moon_transparent.png');
@@ -266,6 +270,7 @@ export class BootScene extends Phaser.Scene {
       'largexpgem',
       'minorhealth',
       'majorhealth',
+      'treasures_sheet',
       'menumoon',
       HERO_ATLAS_KEY,
       ...mobTextures,

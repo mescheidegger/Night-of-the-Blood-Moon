@@ -6,16 +6,15 @@ import { DEFAULT_DROP_TYPE } from '../DropRegistry.js';
  * Base class for any collectible drop (XP, currency, powerups, etc).
  * Designed to be pooled and reused to avoid GC churn.
  *
- * Extends Phaser.Physics.Arcade.Image so it supports collision, overlap,
- * and velocity-based movement (e.g., magnet attraction).
+ * Extends Phaser.Physics.Arcade.Sprite so drops can run optional animations.
  */
-export class BaseDrop extends Phaser.Physics.Arcade.Image {
+export class BaseDrop extends Phaser.Physics.Arcade.Sprite {
   /**
    * Build a pooled drop sprite with baseline physics settings.
    * This ensures every pickup starts from a consistent, recyclable state.
    */
   constructor(scene, x, y) {
-    // Initialize as an Arcade Image using the default texture key.
+    // Initialize as an Arcade Sprite using the default texture key.
     super(scene, x, y, 'xpgem');
 
     // Add to the display & physics worlds.
@@ -39,10 +38,35 @@ export class BaseDrop extends Phaser.Physics.Arcade.Image {
     this.snapRadiusSq = 0;                      // squared distance for auto-collect snap
     this.maxSpeed = 0;                          // max velocity while being magnet-pulled
     this.accel = 0;                             // acceleration toward the player
+    this.spawnImpulseEnabled = true;            // whether DropManager should fan this drop out on spawn
 
     // Lifetime tracking
     this.spawnedAt = 0;
     this.expiresAt = 0;
+  }
+
+  _ensureAnimation(row, texture) {
+    const anim = row?.anim;
+    const key = anim?.key;
+    if (!key) return null;
+
+    const animManager = this.scene?.anims;
+    if (!animManager) return null;
+
+    if (!animManager.exists(key)) {
+      const frames = Array.isArray(anim.frames)
+        ? animManager.generateFrameNumbers(texture, { frames: anim.frames })
+        : anim.frames;
+
+      animManager.create({
+        key,
+        frames,
+        frameRate: Math.max(1, anim.frameRate ?? 3),
+        repeat: anim.repeat ?? -1,
+      });
+    }
+
+    return key;
   }
 
   /**
@@ -52,10 +76,17 @@ export class BaseDrop extends Phaser.Physics.Arcade.Image {
    * @param {object} row - Registry entry describing appearance + magnet behavior.
    */
   reset(x, y, row = {}) {
+    this.anims.stop();
+
     // Set correct texture + frame if a specific drop variant defines them.
     const texture = row.texture ?? 'xpgem';
     const frame = row.frame ?? 0;
     this.setTexture(texture, frame);
+
+    const animationKey = this._ensureAnimation(row, texture);
+    if (animationKey) {
+      this.anims.play(animationKey, true);
+    }
 
     // Optional scale override for visual sizing.
     if (row.scale !== undefined) {
@@ -119,6 +150,9 @@ export class BaseDrop extends Phaser.Physics.Arcade.Image {
     this.maxSpeed = Math.max(0, magnet.maxSpeed ?? 0);
     this.accel = Math.max(0, magnet.accel ?? 0);
 
+    // Spawn impulse behavior controls.
+    this.spawnImpulseEnabled = row.spawnImpulse !== false;
+
     // Store the drop logical type & value payload (XP amount, etc).
     this.type = row.type ?? DEFAULT_DROP_TYPE;
     const value = row.value ?? { currency: 'xp', amount: 0 };
@@ -138,6 +172,9 @@ export class BaseDrop extends Phaser.Physics.Arcade.Image {
    * Clears state to avoid cross-instance value leakage.
    */
   onRelease() {
+    this.anims.stop();
+    this.setTexture('xpgem', 0);
+
     this.body?.stop?.();
     this.body?.setVelocity(0, 0);
 
@@ -147,6 +184,7 @@ export class BaseDrop extends Phaser.Physics.Arcade.Image {
     this.snapRadiusSq = 0;
     this.maxSpeed = 0;
     this.accel = 0;
+    this.spawnImpulseEnabled = true;
 
     // Reset lifetime.
     this.spawnedAt = 0;

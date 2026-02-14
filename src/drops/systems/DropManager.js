@@ -54,8 +54,12 @@ export class DropManager {
     // Apply resolved config (sets sprite, body shape, magnet behavior, XP value, etc).
     this.factory.createOrReset(drop, x, y, type, overrides);
 
-    // Add a small outward push so drops don't stack visually.
-    this._applySpawnImpulse(drop);
+    // Add a small outward push so drops don't stack visually unless disabled by the drop config.
+    if (drop.spawnImpulseEnabled === false) {
+      drop.body?.setVelocity(0, 0);
+    } else {
+      this._applySpawnImpulse(drop);
+    }
 
     return drop;
   }
